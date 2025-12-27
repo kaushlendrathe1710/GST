@@ -15,6 +15,7 @@ import {
   LogOut,
   ChevronDown,
   Brain,
+  FileWarning,
 } from "lucide-react";
 import {
   Sidebar,
@@ -95,6 +96,11 @@ const complianceItems = [
 ];
 
 const settingsItems = [
+  {
+    title: "GST Notices",
+    url: "/notices",
+    icon: FileWarning,
+  },
   {
     title: "Alerts",
     url: "/alerts",

@@ -21,6 +21,7 @@ import Payments from "@/pages/payments";
 import Alerts from "@/pages/alerts";
 import Settings from "@/pages/settings";
 import Insights from "@/pages/insights";
+import Notices from "@/pages/notices";
 import Login from "@/pages/login";
 import BusinessSetup from "@/pages/business-setup";
 import NotFound from "@/pages/not-found";
@@ -93,6 +94,9 @@ function Router() {
       </Route>
       <Route path="/insights">
         {() => <ProtectedRoute component={Insights} />}
+      </Route>
+      <Route path="/notices">
+        {() => <ProtectedRoute component={Notices} />}
       </Route>
       <Route component={NotFound} />
     </Switch>
