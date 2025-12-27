@@ -1,11 +1,41 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, decimal, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, decimal, timestamp, jsonb, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// Users table for email OTP authentication
+export const users = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  name: text("name"),
+  phone: varchar("phone", { length: 15 }),
+  isVerified: boolean("is_verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, lastLoginAt: true });
+export type InsertUser = z.infer<typeof insertUserSchema>;
+export type User = typeof users.$inferSelect;
+
+// OTP tokens for email verification
+export const otpTokens = pgTable("otp_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull(),
+  otp: varchar("otp", { length: 6 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  isUsed: boolean("is_used").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertOtpTokenSchema = createInsertSchema(otpTokens).omit({ id: true, createdAt: true });
+export type InsertOtpToken = z.infer<typeof insertOtpTokenSchema>;
+export type OtpToken = typeof otpTokens.$inferSelect;
 
 // Business Profile
 export const businesses = pgTable("businesses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   gstin: varchar("gstin", { length: 15 }).notNull(),
   pan: varchar("pan", { length: 10 }),
@@ -19,16 +49,23 @@ export const businesses = pgTable("businesses", {
   email: text("email"),
   phone: varchar("phone", { length: 15 }),
   logoUrl: text("logo_url"),
+  bankName: text("bank_name"),
+  bankAccountNumber: text("bank_account_number"),
+  bankIfsc: text("bank_ifsc"),
+  bankBranch: text("bank_branch"),
+  invoicePrefix: varchar("invoice_prefix", { length: 10 }).default("INV"),
+  invoiceStartNumber: integer("invoice_start_number").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertBusinessSchema = createInsertSchema(businesses).omit({ id: true });
+export const insertBusinessSchema = createInsertSchema(businesses).omit({ id: true, createdAt: true });
 export type InsertBusiness = z.infer<typeof insertBusinessSchema>;
 export type Business = typeof businesses.$inferSelect;
 
 // Customers
 export const customers = pgTable("customers", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  businessId: varchar("business_id").notNull(),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
   name: text("name").notNull(),
   gstin: varchar("gstin", { length: 15 }),
   pan: varchar("pan", { length: 10 }),
@@ -39,11 +76,33 @@ export const customers = pgTable("customers", {
   pincode: varchar("pincode", { length: 6 }),
   email: text("email"),
   phone: varchar("phone", { length: 15 }),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true });
+export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true, createdAt: true });
 export type InsertCustomer = z.infer<typeof insertCustomerSchema>;
 export type Customer = typeof customers.$inferSelect;
+
+// Vendors (for purchases)
+export const vendors = pgTable("vendors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  name: text("name").notNull(),
+  gstin: varchar("gstin", { length: 15 }),
+  pan: varchar("pan", { length: 10 }),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  stateCode: varchar("state_code", { length: 2 }),
+  pincode: varchar("pincode", { length: 6 }),
+  email: text("email"),
+  phone: varchar("phone", { length: 15 }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertVendorSchema = createInsertSchema(vendors).omit({ id: true, createdAt: true });
+export type InsertVendor = z.infer<typeof insertVendorSchema>;
+export type Vendor = typeof vendors.$inferSelect;
 
 // Invoice Items
 export const invoiceItemSchema = z.object({
@@ -67,8 +126,8 @@ export type InvoiceItem = z.infer<typeof invoiceItemSchema>;
 // Invoices
 export const invoices = pgTable("invoices", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  businessId: varchar("business_id").notNull(),
-  customerId: varchar("customer_id").notNull(),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  customerId: varchar("customer_id").notNull().references(() => customers.id),
   invoiceNumber: varchar("invoice_number", { length: 50 }).notNull(),
   invoiceType: text("invoice_type").notNull(), // tax_invoice, bill_of_supply, export_invoice, debit_note, credit_note
   invoiceDate: text("invoice_date").notNull(),
@@ -77,6 +136,9 @@ export const invoices = pgTable("invoices", {
   placeOfSupplyCode: varchar("place_of_supply_code", { length: 2 }).notNull(),
   isInterState: boolean("is_inter_state").default(false),
   isReverseCharge: boolean("is_reverse_charge").default(false),
+  isExport: boolean("is_export").default(false),
+  exportType: text("export_type"), // with_payment, without_payment (LUT)
+  shippingAddress: text("shipping_address"),
   items: jsonb("items").$type<InvoiceItem[]>().notNull(),
   subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull(),
   totalDiscount: decimal("total_discount", { precision: 15, scale: 2 }).default("0"),
@@ -84,21 +146,94 @@ export const invoices = pgTable("invoices", {
   totalSgst: decimal("total_sgst", { precision: 15, scale: 2 }).default("0"),
   totalIgst: decimal("total_igst", { precision: 15, scale: 2 }).default("0"),
   totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull(),
+  roundOff: decimal("round_off", { precision: 15, scale: 2 }).default("0"),
   amountInWords: text("amount_in_words"),
   notes: text("notes"),
   termsAndConditions: text("terms_and_conditions"),
   status: text("status").default("draft"), // draft, sent, paid, cancelled
+  pdfUrl: text("pdf_url"),
+  eInvoiceIrn: text("e_invoice_irn"),
+  eInvoiceQrCode: text("e_invoice_qr_code"),
+  linkedInvoiceId: varchar("linked_invoice_id"), // For debit/credit notes
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true });
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
+
+// Purchase Items
+export const purchaseItemSchema = z.object({
+  description: z.string().min(1),
+  hsnCode: z.string().optional(),
+  quantity: z.number().min(1),
+  unit: z.string().default("Nos"),
+  rate: z.number().min(0),
+  gstRate: z.number().min(0).default(18),
+  taxableAmount: z.number(),
+  cgstAmount: z.number(),
+  sgstAmount: z.number(),
+  igstAmount: z.number(),
+  totalAmount: z.number(),
+  isItcEligible: z.boolean().default(true),
+});
+
+export type PurchaseItem = z.infer<typeof purchaseItemSchema>;
+
+// Purchases
+export const purchases = pgTable("purchases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  vendorId: varchar("vendor_id").notNull().references(() => vendors.id),
+  invoiceNumber: varchar("invoice_number", { length: 100 }).notNull(),
+  invoiceDate: text("invoice_date").notNull(),
+  placeOfSupply: text("place_of_supply").notNull(),
+  placeOfSupplyCode: varchar("place_of_supply_code", { length: 2 }).notNull(),
+  isInterState: boolean("is_inter_state").default(false),
+  isReverseCharge: boolean("is_reverse_charge").default(false),
+  category: text("category"), // goods, services, capital_goods, expense
+  items: jsonb("items").$type<PurchaseItem[]>().notNull(),
+  subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull(),
+  totalCgst: decimal("total_cgst", { precision: 15, scale: 2 }).default("0"),
+  totalSgst: decimal("total_sgst", { precision: 15, scale: 2 }).default("0"),
+  totalIgst: decimal("total_igst", { precision: 15, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull(),
+  itcEligible: decimal("itc_eligible", { precision: 15, scale: 2 }).default("0"),
+  itcBlocked: decimal("itc_blocked", { precision: 15, scale: 2 }).default("0"),
+  documentUrl: text("document_url"),
+  gstr2bStatus: text("gstr2b_status"), // matched, mismatched, not_found
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPurchaseSchema = createInsertSchema(purchases).omit({ id: true, createdAt: true });
+export type InsertPurchase = z.infer<typeof insertPurchaseSchema>;
+export type Purchase = typeof purchases.$inferSelect;
+
+// ITC Ledger
+export const itcLedger = pgTable("itc_ledger", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  period: text("period").notNull(), // MMYYYY
+  openingBalance: decimal("opening_balance", { precision: 15, scale: 2 }).default("0"),
+  itcFromPurchases: decimal("itc_from_purchases", { precision: 15, scale: 2 }).default("0"),
+  itcFromGstr2b: decimal("itc_from_gstr2b", { precision: 15, scale: 2 }).default("0"),
+  itcUtilized: decimal("itc_utilized", { precision: 15, scale: 2 }).default("0"),
+  itcReversed: decimal("itc_reversed", { precision: 15, scale: 2 }).default("0"),
+  closingBalance: decimal("closing_balance", { precision: 15, scale: 2 }).default("0"),
+  mismatchAmount: decimal("mismatch_amount", { precision: 15, scale: 2 }).default("0"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertItcLedgerSchema = createInsertSchema(itcLedger).omit({ id: true, createdAt: true });
+export type InsertItcLedger = z.infer<typeof insertItcLedgerSchema>;
+export type ItcLedger = typeof itcLedger.$inferSelect;
 
 // GST Filing Status
 export const filingReturns = pgTable("filing_returns", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  businessId: varchar("business_id").notNull(),
-  returnType: text("return_type").notNull(), // GSTR-1, GSTR-3B, CMP-08, GSTR-9
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  returnType: text("return_type").notNull(), // GSTR-1, GSTR-3B, CMP-08, GSTR-9, GSTR-4
   period: text("period").notNull(), // MMYYYY format
   dueDate: text("due_date").notNull(),
   status: text("status").notNull(), // pending, filed, overdue
@@ -108,11 +243,78 @@ export const filingReturns = pgTable("filing_returns", {
   itcClaimed: decimal("itc_claimed", { precision: 15, scale: 2 }),
   taxPaid: decimal("tax_paid", { precision: 15, scale: 2 }),
   lateFee: decimal("late_fee", { precision: 15, scale: 2 }),
+  interestAmount: decimal("interest_amount", { precision: 15, scale: 2 }),
+  jsonData: jsonb("json_data"), // Stores the JSON for filing
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const insertFilingReturnSchema = createInsertSchema(filingReturns).omit({ id: true });
+export const insertFilingReturnSchema = createInsertSchema(filingReturns).omit({ id: true, createdAt: true });
 export type InsertFilingReturn = z.infer<typeof insertFilingReturnSchema>;
 export type FilingReturn = typeof filingReturns.$inferSelect;
+
+// Payments / Challans
+export const payments = pgTable("payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  filingReturnId: varchar("filing_return_id").references(() => filingReturns.id),
+  challanNumber: varchar("challan_number", { length: 50 }),
+  challanDate: text("challan_date"),
+  paymentMode: text("payment_mode"), // netbanking, cash, itc
+  cgstAmount: decimal("cgst_amount", { precision: 15, scale: 2 }).default("0"),
+  sgstAmount: decimal("sgst_amount", { precision: 15, scale: 2 }).default("0"),
+  igstAmount: decimal("igst_amount", { precision: 15, scale: 2 }).default("0"),
+  cessAmount: decimal("cess_amount", { precision: 15, scale: 2 }).default("0"),
+  interestAmount: decimal("interest_amount", { precision: 15, scale: 2 }).default("0"),
+  lateFeeAmount: decimal("late_fee_amount", { precision: 15, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull(),
+  itcCgstUsed: decimal("itc_cgst_used", { precision: 15, scale: 2 }).default("0"),
+  itcSgstUsed: decimal("itc_sgst_used", { precision: 15, scale: 2 }).default("0"),
+  itcIgstUsed: decimal("itc_igst_used", { precision: 15, scale: 2 }).default("0"),
+  cashCgstPaid: decimal("cash_cgst_paid", { precision: 15, scale: 2 }).default("0"),
+  cashSgstPaid: decimal("cash_sgst_paid", { precision: 15, scale: 2 }).default("0"),
+  cashIgstPaid: decimal("cash_igst_paid", { precision: 15, scale: 2 }).default("0"),
+  status: text("status").default("pending"), // pending, paid, failed
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true, createdAt: true });
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type Payment = typeof payments.$inferSelect;
+
+// Alerts / Notifications
+export const alerts = pgTable("alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  businessId: varchar("business_id").references(() => businesses.id),
+  type: text("type").notNull(), // due_date, mismatch, overdue, payment_reminder
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  isRead: boolean("is_read").default(false),
+  isSent: boolean("is_sent").default(false), // For email/SMS
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAlertSchema = createInsertSchema(alerts).omit({ id: true, createdAt: true });
+export type InsertAlert = z.infer<typeof insertAlertSchema>;
+export type Alert = typeof alerts.$inferSelect;
+
+// File uploads tracking
+export const fileUploads = pgTable("file_uploads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  businessId: varchar("business_id").references(() => businesses.id),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(), // logo, invoice_pdf, purchase_doc
+  fileUrl: text("file_url").notNull(),
+  s3Key: text("s3_key").notNull(),
+  fileSize: integer("file_size"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertFileUploadSchema = createInsertSchema(fileUploads).omit({ id: true, createdAt: true });
+export type InsertFileUpload = z.infer<typeof insertFileUploadSchema>;
+export type FileUpload = typeof fileUploads.$inferSelect;
 
 // HSN Codes lookup
 export const hsnCodes = [
@@ -189,21 +391,6 @@ export const indianStates = [
   { code: "37", name: "Andhra Pradesh" },
   { code: "38", name: "Ladakh" },
 ];
-
-// Users table for basic auth
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-});
-
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
-});
-
-export type InsertUser = z.infer<typeof insertUserSchema>;
-export type User = typeof users.$inferSelect;
 
 // Dashboard Stats type
 export interface DashboardStats {

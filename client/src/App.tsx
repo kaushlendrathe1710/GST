@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -6,53 +6,114 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { Loader2 } from "lucide-react";
 import Dashboard from "@/pages/dashboard";
 import Invoices from "@/pages/invoices";
 import InvoiceCreate from "@/pages/invoice-create";
 import Customers from "@/pages/customers";
 import Filing from "@/pages/filing";
 import Settings from "@/pages/settings";
+import Login from "@/pages/login";
+import BusinessSetup from "@/pages/business-setup";
 import NotFound from "@/pages/not-found";
+
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { user, currentBusinessId, isLoading } = useAuth();
+  const [location] = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Redirect to="/login" />;
+  }
+
+  if (!currentBusinessId && location !== "/business-setup") {
+    return <Redirect to="/business-setup" />;
+  }
+
+  return <Component />;
+}
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/invoices" component={Invoices} />
-      <Route path="/invoices/new" component={InvoiceCreate} />
-      <Route path="/customers" component={Customers} />
-      <Route path="/filing" component={Filing} />
-      <Route path="/settings" component={Settings} />
+      <Route path="/login" component={Login} />
+      <Route path="/business-setup">
+        {() => <ProtectedRoute component={BusinessSetup} />}
+      </Route>
+      <Route path="/">
+        {() => <ProtectedRoute component={Dashboard} />}
+      </Route>
+      <Route path="/invoices">
+        {() => <ProtectedRoute component={Invoices} />}
+      </Route>
+      <Route path="/invoices/new">
+        {() => <ProtectedRoute component={InvoiceCreate} />}
+      </Route>
+      <Route path="/customers">
+        {() => <ProtectedRoute component={Customers} />}
+      </Route>
+      <Route path="/filing">
+        {() => <ProtectedRoute component={Filing} />}
+      </Route>
+      <Route path="/settings">
+        {() => <ProtectedRoute component={Settings} />}
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
+function AppLayout() {
+  const { user, currentBusinessId } = useAuth();
+  const [location] = useLocation();
+
+  const isAuthPage = location === "/login";
+  const isSetupPage = location === "/business-setup";
+
+  if (isAuthPage || (!currentBusinessId && !isSetupPage)) {
+    return <Router />;
+  }
+
   const sidebarStyle = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "4rem",
   };
 
   return (
+    <SidebarProvider style={sidebarStyle as React.CSSProperties}>
+      <div className="flex h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <header className="flex items-center justify-between gap-2 p-2 border-b border-border bg-background shrink-0 z-50">
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <ThemeToggle />
+          </header>
+          <main className="flex-1 overflow-auto bg-background">
+            <Router />
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
+  );
+}
+
+function App() {
+  return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <SidebarProvider style={sidebarStyle as React.CSSProperties}>
-          <div className="flex h-screen w-full">
-            <AppSidebar />
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <header className="flex items-center justify-between gap-2 p-2 border-b border-border bg-background shrink-0 z-50">
-                <SidebarTrigger data-testid="button-sidebar-toggle" />
-                <ThemeToggle />
-              </header>
-              <main className="flex-1 overflow-auto bg-background">
-                <Router />
-              </main>
-            </div>
-          </div>
-        </SidebarProvider>
-        <Toaster />
-      </TooltipProvider>
+      <AuthProvider>
+        <TooltipProvider>
+          <AppLayout />
+          <Toaster />
+        </TooltipProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

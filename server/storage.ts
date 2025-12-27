@@ -1,351 +1,480 @@
-import { 
-  type User, 
-  type InsertUser, 
-  type Business, 
+import { eq, and, desc, asc, gte, lte } from "drizzle-orm";
+import { db } from "./db";
+import {
+  users,
+  otpTokens,
+  businesses,
+  customers,
+  vendors,
+  invoices,
+  purchases,
+  itcLedger,
+  filingReturns,
+  payments,
+  alerts,
+  fileUploads,
+  type User,
+  type InsertUser,
+  type OtpToken,
+  type InsertOtpToken,
+  type Business,
   type InsertBusiness,
   type Customer,
   type InsertCustomer,
+  type Vendor,
+  type InsertVendor,
   type Invoice,
   type InsertInvoice,
+  type Purchase,
+  type InsertPurchase,
+  type ItcLedger,
+  type InsertItcLedger,
   type FilingReturn,
   type InsertFilingReturn,
+  type Payment,
+  type InsertPayment,
+  type Alert,
+  type InsertAlert,
+  type FileUpload,
+  type InsertFileUpload,
   type DashboardStats,
 } from "@shared/schema";
-import { randomUUID } from "crypto";
 
 export interface IStorage {
-  // Users
+  // Users & Auth
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  
+  updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
+  updateUserLastLogin(id: string): Promise<void>;
+
+  // OTP
+  createOtpToken(token: InsertOtpToken): Promise<OtpToken>;
+  getValidOtp(email: string, otp: string): Promise<OtpToken | undefined>;
+  markOtpUsed(id: string): Promise<void>;
+
   // Business
-  getBusiness(): Promise<Business | undefined>;
+  getBusinessesByUser(userId: string): Promise<Business[]>;
+  getBusiness(id: string): Promise<Business | undefined>;
   createBusiness(business: InsertBusiness): Promise<Business>;
   updateBusiness(id: string, business: Partial<InsertBusiness>): Promise<Business | undefined>;
-  
+  deleteBusiness(id: string): Promise<boolean>;
+
   // Customers
-  getCustomers(): Promise<Customer[]>;
+  getCustomers(businessId: string): Promise<Customer[]>;
   getCustomer(id: string): Promise<Customer | undefined>;
   createCustomer(customer: InsertCustomer): Promise<Customer>;
   updateCustomer(id: string, customer: Partial<InsertCustomer>): Promise<Customer | undefined>;
   deleteCustomer(id: string): Promise<boolean>;
-  
+
+  // Vendors
+  getVendors(businessId: string): Promise<Vendor[]>;
+  getVendor(id: string): Promise<Vendor | undefined>;
+  createVendor(vendor: InsertVendor): Promise<Vendor>;
+  updateVendor(id: string, vendor: Partial<InsertVendor>): Promise<Vendor | undefined>;
+  deleteVendor(id: string): Promise<boolean>;
+
   // Invoices
-  getInvoices(): Promise<Invoice[]>;
+  getInvoices(businessId: string): Promise<Invoice[]>;
   getInvoice(id: string): Promise<Invoice | undefined>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
   updateInvoice(id: string, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined>;
   deleteInvoice(id: string): Promise<boolean>;
-  getLastInvoiceNumber(): Promise<number>;
-  
+  getLastInvoiceNumber(businessId: string): Promise<number>;
+
+  // Purchases
+  getPurchases(businessId: string): Promise<Purchase[]>;
+  getPurchase(id: string): Promise<Purchase | undefined>;
+  createPurchase(purchase: InsertPurchase): Promise<Purchase>;
+  updatePurchase(id: string, purchase: Partial<InsertPurchase>): Promise<Purchase | undefined>;
+  deletePurchase(id: string): Promise<boolean>;
+
+  // ITC Ledger
+  getItcLedger(businessId: string, period?: string): Promise<ItcLedger[]>;
+  createItcLedger(itc: InsertItcLedger): Promise<ItcLedger>;
+  updateItcLedger(id: string, itc: Partial<InsertItcLedger>): Promise<ItcLedger | undefined>;
+
   // Filing Returns
-  getFilingReturns(): Promise<FilingReturn[]>;
+  getFilingReturns(businessId: string): Promise<FilingReturn[]>;
   getFilingReturn(id: string): Promise<FilingReturn | undefined>;
   createFilingReturn(filing: InsertFilingReturn): Promise<FilingReturn>;
   updateFilingReturn(id: string, filing: Partial<InsertFilingReturn>): Promise<FilingReturn | undefined>;
-  
+
+  // Payments
+  getPayments(businessId: string): Promise<Payment[]>;
+  getPayment(id: string): Promise<Payment | undefined>;
+  createPayment(payment: InsertPayment): Promise<Payment>;
+  updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment | undefined>;
+
+  // Alerts
+  getAlerts(userId: string): Promise<Alert[]>;
+  createAlert(alert: InsertAlert): Promise<Alert>;
+  markAlertRead(id: string): Promise<void>;
+  markAlertSent(id: string): Promise<void>;
+
+  // Files
+  createFileUpload(file: InsertFileUpload): Promise<FileUpload>;
+  getFileUploads(businessId: string): Promise<FileUpload[]>;
+  deleteFileUpload(id: string): Promise<boolean>;
+
   // Dashboard
-  getDashboardStats(): Promise<DashboardStats>;
+  getDashboardStats(businessId: string): Promise<DashboardStats>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private business: Business | undefined;
-  private customers: Map<string, Customer>;
-  private invoices: Map<string, Invoice>;
-  private filingReturns: Map<string, FilingReturn>;
-  private invoiceCounter: number;
-
-  constructor() {
-    this.users = new Map();
-    this.customers = new Map();
-    this.invoices = new Map();
-    this.filingReturns = new Map();
-    this.invoiceCounter = 0;
-    
-    this.initializeSampleData();
-  }
-
-  private initializeSampleData() {
-    this.business = {
-      id: "default",
-      name: "Sample Business Pvt Ltd",
-      gstin: "27AADCS0472N1Z1",
-      pan: "AADCS0472N",
-      businessType: "pvt_ltd",
-      gstScheme: "regular",
-      address: "123 Business Park, Sector 5",
-      city: "Mumbai",
-      state: "Maharashtra",
-      stateCode: "27",
-      pincode: "400001",
-      email: "contact@samplebusiness.com",
-      phone: "+91 98765 43210",
-      logoUrl: null,
-    };
-
-    const sampleCustomers: Customer[] = [
-      {
-        id: randomUUID(),
-        businessId: "default",
-        name: "Tech Solutions India Pvt Ltd",
-        gstin: "29AABCT1234F1ZX",
-        pan: "AABCT1234F",
-        address: "456 Tech Park, Whitefield",
-        city: "Bangalore",
-        state: "Karnataka",
-        stateCode: "29",
-        pincode: "560066",
-        email: "accounts@techsolutions.in",
-        phone: "+91 80123 45678",
-      },
-      {
-        id: randomUUID(),
-        businessId: "default",
-        name: "Global Traders",
-        gstin: "07AADCG5678H1ZY",
-        pan: "AADCG5678H",
-        address: "789 Trade Center, Connaught Place",
-        city: "New Delhi",
-        state: "Delhi",
-        stateCode: "07",
-        pincode: "110001",
-        email: "info@globaltraders.com",
-        phone: "+91 11234 56789",
-      },
-      {
-        id: randomUUID(),
-        businessId: "default",
-        name: "Sunrise Enterprises",
-        gstin: "27AABCS9012J1ZW",
-        pan: "AABCS9012J",
-        address: "101 Industrial Area",
-        city: "Pune",
-        state: "Maharashtra",
-        stateCode: "27",
-        pincode: "411001",
-        email: "purchase@sunrise.co.in",
-        phone: "+91 20123 45678",
-      },
-    ];
-
-    sampleCustomers.forEach((customer) => {
-      this.customers.set(customer.id, customer);
-    });
-
-    const today = new Date();
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 20);
-    const nextMonthGSTR1 = new Date(today.getFullYear(), today.getMonth() + 1, 11);
-    
-    const sampleFilings: FilingReturn[] = [
-      {
-        id: randomUUID(),
-        businessId: "default",
-        returnType: "GSTR-3B",
-        period: `${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getFullYear()}`,
-        dueDate: nextMonth.toISOString().split('T')[0],
-        status: "pending",
-        filedDate: null,
-        arnNumber: null,
-        taxLiability: "25000",
-        itcClaimed: "15000",
-        taxPaid: null,
-        lateFee: null,
-      },
-      {
-        id: randomUUID(),
-        businessId: "default",
-        returnType: "GSTR-1",
-        period: `${(today.getMonth() + 1).toString().padStart(2, '0')}${today.getFullYear()}`,
-        dueDate: nextMonthGSTR1.toISOString().split('T')[0],
-        status: "pending",
-        filedDate: null,
-        arnNumber: null,
-        taxLiability: null,
-        itcClaimed: null,
-        taxPaid: null,
-        lateFee: null,
-      },
-      {
-        id: randomUUID(),
-        businessId: "default",
-        returnType: "GSTR-3B",
-        period: `${today.getMonth().toString().padStart(2, '0')}${today.getFullYear()}`,
-        dueDate: new Date(today.getFullYear(), today.getMonth(), 20).toISOString().split('T')[0],
-        status: "filed",
-        filedDate: new Date(today.getFullYear(), today.getMonth(), 18).toISOString().split('T')[0],
-        arnNumber: "AA2712345678901",
-        taxLiability: "18500",
-        itcClaimed: "12000",
-        taxPaid: "6500",
-        lateFee: "0",
-      },
-    ];
-
-    sampleFilings.forEach((filing) => {
-      this.filingReturns.set(filing.id, filing);
-    });
-  }
-
+export class DatabaseStorage implements IStorage {
+  // Users & Auth
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
   }
 
-  async getBusiness(): Promise<Business | undefined> {
-    return this.business;
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
+    return user;
   }
 
-  async createBusiness(insertBusiness: InsertBusiness): Promise<Business> {
-    const id = randomUUID();
-    const business: Business = { ...insertBusiness, id };
-    this.business = business;
+  async createUser(user: InsertUser): Promise<User> {
+    const [created] = await db.insert(users).values({
+      ...user,
+      email: user.email.toLowerCase(),
+    }).returning();
+    return created;
+  }
+
+  async updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined> {
+    const [updated] = await db.update(users).set(data).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
+  async updateUserLastLogin(id: string): Promise<void> {
+    await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
+  }
+
+  // OTP
+  async createOtpToken(token: InsertOtpToken): Promise<OtpToken> {
+    const [created] = await db.insert(otpTokens).values({
+      ...token,
+      email: token.email.toLowerCase(),
+    }).returning();
+    return created;
+  }
+
+  async getValidOtp(email: string, otp: string): Promise<OtpToken | undefined> {
+    const now = new Date();
+    const [token] = await db
+      .select()
+      .from(otpTokens)
+      .where(
+        and(
+          eq(otpTokens.email, email.toLowerCase()),
+          eq(otpTokens.otp, otp),
+          eq(otpTokens.isUsed, false),
+          gte(otpTokens.expiresAt, now)
+        )
+      );
+    return token;
+  }
+
+  async markOtpUsed(id: string): Promise<void> {
+    await db.update(otpTokens).set({ isUsed: true }).where(eq(otpTokens.id, id));
+  }
+
+  // Business
+  async getBusinessesByUser(userId: string): Promise<Business[]> {
+    return db.select().from(businesses).where(eq(businesses.userId, userId));
+  }
+
+  async getBusiness(id: string): Promise<Business | undefined> {
+    const [business] = await db.select().from(businesses).where(eq(businesses.id, id));
     return business;
   }
 
-  async updateBusiness(id: string, updates: Partial<InsertBusiness>): Promise<Business | undefined> {
-    if (this.business && this.business.id === id) {
-      this.business = { ...this.business, ...updates };
-      return this.business;
-    }
-    return undefined;
+  async createBusiness(business: InsertBusiness): Promise<Business> {
+    const [created] = await db.insert(businesses).values(business).returning();
+    return created;
   }
 
-  async getCustomers(): Promise<Customer[]> {
-    return Array.from(this.customers.values());
+  async updateBusiness(id: string, business: Partial<InsertBusiness>): Promise<Business | undefined> {
+    const [updated] = await db.update(businesses).set(business).where(eq(businesses.id, id)).returning();
+    return updated;
+  }
+
+  async deleteBusiness(id: string): Promise<boolean> {
+    const result = await db.delete(businesses).where(eq(businesses.id, id));
+    return true;
+  }
+
+  // Customers
+  async getCustomers(businessId: string): Promise<Customer[]> {
+    return db.select().from(customers).where(eq(customers.businessId, businessId));
   }
 
   async getCustomer(id: string): Promise<Customer | undefined> {
-    return this.customers.get(id);
-  }
-
-  async createCustomer(insertCustomer: InsertCustomer): Promise<Customer> {
-    const id = randomUUID();
-    const customer: Customer = { ...insertCustomer, id };
-    this.customers.set(id, customer);
+    const [customer] = await db.select().from(customers).where(eq(customers.id, id));
     return customer;
   }
 
-  async updateCustomer(id: string, updates: Partial<InsertCustomer>): Promise<Customer | undefined> {
-    const customer = this.customers.get(id);
-    if (customer) {
-      const updated = { ...customer, ...updates };
-      this.customers.set(id, updated);
-      return updated;
-    }
-    return undefined;
+  async createCustomer(customer: InsertCustomer): Promise<Customer> {
+    const [created] = await db.insert(customers).values(customer).returning();
+    return created;
+  }
+
+  async updateCustomer(id: string, customer: Partial<InsertCustomer>): Promise<Customer | undefined> {
+    const [updated] = await db.update(customers).set(customer).where(eq(customers.id, id)).returning();
+    return updated;
   }
 
   async deleteCustomer(id: string): Promise<boolean> {
-    return this.customers.delete(id);
+    await db.delete(customers).where(eq(customers.id, id));
+    return true;
   }
 
-  async getInvoices(): Promise<Invoice[]> {
-    return Array.from(this.invoices.values()).sort((a, b) => 
-      new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()
-    );
+  // Vendors
+  async getVendors(businessId: string): Promise<Vendor[]> {
+    return db.select().from(vendors).where(eq(vendors.businessId, businessId));
+  }
+
+  async getVendor(id: string): Promise<Vendor | undefined> {
+    const [vendor] = await db.select().from(vendors).where(eq(vendors.id, id));
+    return vendor;
+  }
+
+  async createVendor(vendor: InsertVendor): Promise<Vendor> {
+    const [created] = await db.insert(vendors).values(vendor).returning();
+    return created;
+  }
+
+  async updateVendor(id: string, vendor: Partial<InsertVendor>): Promise<Vendor | undefined> {
+    const [updated] = await db.update(vendors).set(vendor).where(eq(vendors.id, id)).returning();
+    return updated;
+  }
+
+  async deleteVendor(id: string): Promise<boolean> {
+    await db.delete(vendors).where(eq(vendors.id, id));
+    return true;
+  }
+
+  // Invoices
+  async getInvoices(businessId: string): Promise<Invoice[]> {
+    return db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.businessId, businessId))
+      .orderBy(desc(invoices.createdAt));
   }
 
   async getInvoice(id: string): Promise<Invoice | undefined> {
-    return this.invoices.get(id);
-  }
-
-  async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
-    const id = randomUUID();
-    this.invoiceCounter++;
-    const invoice: Invoice = { ...insertInvoice, id };
-    this.invoices.set(id, invoice);
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
     return invoice;
   }
 
-  async updateInvoice(id: string, updates: Partial<InsertInvoice>): Promise<Invoice | undefined> {
-    const invoice = this.invoices.get(id);
-    if (invoice) {
-      const updated = { ...invoice, ...updates };
-      this.invoices.set(id, updated);
-      return updated;
-    }
-    return undefined;
+  async createInvoice(invoice: InsertInvoice): Promise<Invoice> {
+    const [created] = await db.insert(invoices).values(invoice as any).returning();
+    return created;
+  }
+
+  async updateInvoice(id: string, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined> {
+    const [updated] = await db.update(invoices).set(invoice as any).where(eq(invoices.id, id)).returning();
+    return updated;
   }
 
   async deleteInvoice(id: string): Promise<boolean> {
-    return this.invoices.delete(id);
+    await db.delete(invoices).where(eq(invoices.id, id));
+    return true;
   }
 
-  async getLastInvoiceNumber(): Promise<number> {
-    return this.invoiceCounter;
+  async getLastInvoiceNumber(businessId: string): Promise<number> {
+    const result = await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.businessId, businessId))
+      .orderBy(desc(invoices.createdAt))
+      .limit(1);
+    
+    if (result.length === 0) return 0;
+    
+    const match = result[0].invoiceNumber.match(/(\d+)$/);
+    return match ? parseInt(match[1]) : 0;
   }
 
-  async getFilingReturns(): Promise<FilingReturn[]> {
-    return Array.from(this.filingReturns.values()).sort((a, b) => 
-      new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime()
-    );
+  // Purchases
+  async getPurchases(businessId: string): Promise<Purchase[]> {
+    return db
+      .select()
+      .from(purchases)
+      .where(eq(purchases.businessId, businessId))
+      .orderBy(desc(purchases.createdAt));
+  }
+
+  async getPurchase(id: string): Promise<Purchase | undefined> {
+    const [purchase] = await db.select().from(purchases).where(eq(purchases.id, id));
+    return purchase;
+  }
+
+  async createPurchase(purchase: InsertPurchase): Promise<Purchase> {
+    const [created] = await db.insert(purchases).values(purchase as any).returning();
+    return created;
+  }
+
+  async updatePurchase(id: string, purchase: Partial<InsertPurchase>): Promise<Purchase | undefined> {
+    const [updated] = await db.update(purchases).set(purchase as any).where(eq(purchases.id, id)).returning();
+    return updated;
+  }
+
+  async deletePurchase(id: string): Promise<boolean> {
+    await db.delete(purchases).where(eq(purchases.id, id));
+    return true;
+  }
+
+  // ITC Ledger
+  async getItcLedger(businessId: string, period?: string): Promise<ItcLedger[]> {
+    if (period) {
+      return db
+        .select()
+        .from(itcLedger)
+        .where(and(eq(itcLedger.businessId, businessId), eq(itcLedger.period, period)));
+    }
+    return db.select().from(itcLedger).where(eq(itcLedger.businessId, businessId));
+  }
+
+  async createItcLedger(itc: InsertItcLedger): Promise<ItcLedger> {
+    const [created] = await db.insert(itcLedger).values(itc).returning();
+    return created;
+  }
+
+  async updateItcLedger(id: string, itc: Partial<InsertItcLedger>): Promise<ItcLedger | undefined> {
+    const [updated] = await db.update(itcLedger).set(itc).where(eq(itcLedger.id, id)).returning();
+    return updated;
+  }
+
+  // Filing Returns
+  async getFilingReturns(businessId: string): Promise<FilingReturn[]> {
+    return db
+      .select()
+      .from(filingReturns)
+      .where(eq(filingReturns.businessId, businessId))
+      .orderBy(desc(filingReturns.dueDate));
   }
 
   async getFilingReturn(id: string): Promise<FilingReturn | undefined> {
-    return this.filingReturns.get(id);
-  }
-
-  async createFilingReturn(insertFiling: InsertFilingReturn): Promise<FilingReturn> {
-    const id = randomUUID();
-    const filing: FilingReturn = { ...insertFiling, id };
-    this.filingReturns.set(id, filing);
+    const [filing] = await db.select().from(filingReturns).where(eq(filingReturns.id, id));
     return filing;
   }
 
-  async updateFilingReturn(id: string, updates: Partial<InsertFilingReturn>): Promise<FilingReturn | undefined> {
-    const filing = this.filingReturns.get(id);
-    if (filing) {
-      const updated = { ...filing, ...updates };
-      this.filingReturns.set(id, updated);
-      return updated;
-    }
-    return undefined;
+  async createFilingReturn(filing: InsertFilingReturn): Promise<FilingReturn> {
+    const [created] = await db.insert(filingReturns).values(filing).returning();
+    return created;
   }
 
-  async getDashboardStats(): Promise<DashboardStats> {
-    const invoices = await this.getInvoices();
-    const customers = await this.getCustomers();
-    const filingReturns = await this.getFilingReturns();
+  async updateFilingReturn(id: string, filing: Partial<InsertFilingReturn>): Promise<FilingReturn | undefined> {
+    const [updated] = await db
+      .update(filingReturns)
+      .set(filing)
+      .where(eq(filingReturns.id, id))
+      .returning();
+    return updated;
+  }
 
-    const totalRevenue = invoices.reduce((sum, inv) => sum + parseFloat(inv.totalAmount), 0);
-    const pendingAmount = invoices
+  // Payments
+  async getPayments(businessId: string): Promise<Payment[]> {
+    return db
+      .select()
+      .from(payments)
+      .where(eq(payments.businessId, businessId))
+      .orderBy(desc(payments.createdAt));
+  }
+
+  async getPayment(id: string): Promise<Payment | undefined> {
+    const [payment] = await db.select().from(payments).where(eq(payments.id, id));
+    return payment;
+  }
+
+  async createPayment(payment: InsertPayment): Promise<Payment> {
+    const [created] = await db.insert(payments).values(payment).returning();
+    return created;
+  }
+
+  async updatePayment(id: string, payment: Partial<InsertPayment>): Promise<Payment | undefined> {
+    const [updated] = await db.update(payments).set(payment).where(eq(payments.id, id)).returning();
+    return updated;
+  }
+
+  // Alerts
+  async getAlerts(userId: string): Promise<Alert[]> {
+    return db
+      .select()
+      .from(alerts)
+      .where(eq(alerts.userId, userId))
+      .orderBy(desc(alerts.createdAt));
+  }
+
+  async createAlert(alert: InsertAlert): Promise<Alert> {
+    const [created] = await db.insert(alerts).values(alert).returning();
+    return created;
+  }
+
+  async markAlertRead(id: string): Promise<void> {
+    await db.update(alerts).set({ isRead: true }).where(eq(alerts.id, id));
+  }
+
+  async markAlertSent(id: string): Promise<void> {
+    await db.update(alerts).set({ isSent: true, sentAt: new Date() }).where(eq(alerts.id, id));
+  }
+
+  // Files
+  async createFileUpload(file: InsertFileUpload): Promise<FileUpload> {
+    const [created] = await db.insert(fileUploads).values(file).returning();
+    return created;
+  }
+
+  async getFileUploads(businessId: string): Promise<FileUpload[]> {
+    return db.select().from(fileUploads).where(eq(fileUploads.businessId, businessId));
+  }
+
+  async deleteFileUpload(id: string): Promise<boolean> {
+    await db.delete(fileUploads).where(eq(fileUploads.id, id));
+    return true;
+  }
+
+  // Dashboard
+  async getDashboardStats(businessId: string): Promise<DashboardStats> {
+    const allInvoices = await this.getInvoices(businessId);
+    const allCustomers = await this.getCustomers(businessId);
+    const allFilings = await this.getFilingReturns(businessId);
+
+    const totalRevenue = allInvoices.reduce(
+      (sum, inv) => sum + parseFloat(inv.totalAmount || "0"),
+      0
+    );
+    const pendingAmount = allInvoices
       .filter((inv) => inv.status === "sent" || inv.status === "draft")
-      .reduce((sum, inv) => sum + parseFloat(inv.totalAmount), 0);
-    
-    const gstPayable = invoices.reduce((sum, inv) => {
-      return sum + parseFloat(inv.totalCgst || "0") + parseFloat(inv.totalSgst || "0") + parseFloat(inv.totalIgst || "0");
+      .reduce((sum, inv) => sum + parseFloat(inv.totalAmount || "0"), 0);
+
+    const gstPayable = allInvoices.reduce((sum, inv) => {
+      return (
+        sum +
+        parseFloat(inv.totalCgst || "0") +
+        parseFloat(inv.totalSgst || "0") +
+        parseFloat(inv.totalIgst || "0")
+      );
     }, 0);
 
-    const upcomingDeadlines = filingReturns
+    const upcomingDeadlines = allFilings
       .filter((f) => f.status === "pending")
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
       .slice(0, 5);
 
     return {
-      totalInvoices: invoices.length,
+      totalInvoices: allInvoices.length,
       totalRevenue,
       pendingAmount,
-      totalCustomers: customers.length,
+      totalCustomers: allCustomers.length,
       gstPayable,
       itcAvailable: gstPayable * 0.6,
       upcomingDeadlines,
-      recentInvoices: invoices.slice(0, 5),
+      recentInvoices: allInvoices.slice(0, 5),
     };
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
