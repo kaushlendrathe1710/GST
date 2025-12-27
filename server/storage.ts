@@ -111,6 +111,8 @@ export interface IStorage {
   createAlert(alert: InsertAlert): Promise<Alert>;
   markAlertRead(id: string): Promise<void>;
   markAlertSent(id: string): Promise<void>;
+  markAllAlertsRead(userId: string): Promise<void>;
+  deleteAlert(id: string): Promise<void>;
 
   // Files
   createFileUpload(file: InsertFileUpload): Promise<FileUpload>;
@@ -419,6 +421,14 @@ export class DatabaseStorage implements IStorage {
 
   async markAlertSent(id: string): Promise<void> {
     await db.update(alerts).set({ isSent: true, sentAt: new Date() }).where(eq(alerts.id, id));
+  }
+
+  async markAllAlertsRead(userId: string): Promise<void> {
+    await db.update(alerts).set({ isRead: true }).where(eq(alerts.userId, userId));
+  }
+
+  async deleteAlert(id: string): Promise<void> {
+    await db.delete(alerts).where(eq(alerts.id, id));
   }
 
   // Files

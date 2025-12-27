@@ -12,7 +12,12 @@ import Dashboard from "@/pages/dashboard";
 import Invoices from "@/pages/invoices";
 import InvoiceCreate from "@/pages/invoice-create";
 import Customers from "@/pages/customers";
+import Purchases from "@/pages/purchases";
+import Vendors from "@/pages/vendors";
+import ITC from "@/pages/itc";
 import Filing from "@/pages/filing";
+import Payments from "@/pages/payments";
+import Alerts from "@/pages/alerts";
 import Settings from "@/pages/settings";
 import Login from "@/pages/login";
 import BusinessSetup from "@/pages/business-setup";
@@ -60,8 +65,23 @@ function Router() {
       <Route path="/customers">
         {() => <ProtectedRoute component={Customers} />}
       </Route>
+      <Route path="/purchases">
+        {() => <ProtectedRoute component={Purchases} />}
+      </Route>
+      <Route path="/vendors">
+        {() => <ProtectedRoute component={Vendors} />}
+      </Route>
+      <Route path="/itc">
+        {() => <ProtectedRoute component={ITC} />}
+      </Route>
       <Route path="/filing">
         {() => <ProtectedRoute component={Filing} />}
+      </Route>
+      <Route path="/payments">
+        {() => <ProtectedRoute component={Payments} />}
+      </Route>
+      <Route path="/alerts">
+        {() => <ProtectedRoute component={Alerts} />}
       </Route>
       <Route path="/settings">
         {() => <ProtectedRoute component={Settings} />}

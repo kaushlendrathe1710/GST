@@ -545,12 +545,30 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/alerts/:id/read", requireAuth, async (req, res) => {
+  app.patch("/api/alerts/:id", requireAuth, async (req, res) => {
     try {
       await storage.markAlertRead(req.params.id);
       res.json({ success: true });
     } catch (error) {
-      res.status(500).json({ error: "Failed to mark alert as read" });
+      res.status(500).json({ error: "Failed to update alert" });
+    }
+  });
+
+  app.post("/api/alerts/mark-all-read", requireAuth, async (req, res) => {
+    try {
+      await storage.markAllAlertsRead(req.session.userId!);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to mark alerts as read" });
+    }
+  });
+
+  app.delete("/api/alerts/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteAlert(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete alert" });
     }
   });
 
