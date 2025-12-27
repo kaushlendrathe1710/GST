@@ -13,6 +13,8 @@ import {
   insertPurchaseSchema,
   insertFilingReturnSchema,
   insertPaymentSchema,
+  insertGstNoticeSchema,
+  insertAlertSchema,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -609,6 +611,390 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete alert" });
+    }
+  });
+
+  // ==================== GST NOTICE ROUTES ====================
+  
+  app.get("/api/gst-notices", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const notices = await storage.getGstNotices(req.session.businessId!);
+      res.json(notices);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch GST notices" });
+    }
+  });
+
+  app.get("/api/gst-notices/:id", requireAuth, async (req, res) => {
+    try {
+      const notice = await storage.getGstNotice(req.params.id);
+      if (!notice) {
+        return res.status(404).json({ error: "Notice not found" });
+      }
+      res.json(notice);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch notice" });
+    }
+  });
+
+  app.post("/api/gst-notices", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const data = insertGstNoticeSchema.parse({
+        ...req.body,
+        businessId: req.session.businessId
+      });
+      const notice = await storage.createGstNotice(data);
+      res.status(201).json(notice);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid notice data" });
+    }
+  });
+
+  app.patch("/api/gst-notices/:id", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const existingNotice = await storage.getGstNotice(req.params.id);
+      if (!existingNotice) {
+        return res.status(404).json({ error: "Notice not found" });
+      }
+      if (existingNotice.businessId !== req.session.businessId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const data = insertGstNoticeSchema.partial().parse(req.body);
+      const notice = await storage.updateGstNotice(req.params.id, data);
+      res.json(notice);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid notice data" });
+    }
+  });
+
+  app.delete("/api/gst-notices/:id", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const existingNotice = await storage.getGstNotice(req.params.id);
+      if (!existingNotice) {
+        return res.status(404).json({ error: "Notice not found" });
+      }
+      if (existingNotice.businessId !== req.session.businessId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      await storage.deleteGstNotice(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete notice" });
+    }
+  });
+
+  // ==================== TAX LIABILITY & ANALYTICS ROUTES ====================
+  
+  app.get("/api/tax-liability/:period", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const { period } = req.params;
+      const liability = await storage.calculateTaxLiability(req.session.businessId!, period);
+      res.json(liability);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to calculate tax liability" });
+    }
+  });
+
+  app.get("/api/analytics", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const { period } = req.query;
+      const analytics = await storage.getMonthlyAnalytics(
+        req.session.businessId!,
+        period as string | undefined
+      );
+      res.json(analytics);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch analytics" });
+    }
+  });
+
+  app.post("/api/filing-returns/:id/auto-populate", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const filing = await storage.getFilingReturn(id);
+      if (!filing) {
+        return res.status(404).json({ error: "Filing return not found" });
+      }
+      if (filing.businessId !== req.session.businessId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const liability = await storage.calculateTaxLiability(req.session.businessId!, filing.period);
+      
+      const updatedFiling = await storage.updateFilingReturn(id, {
+        taxLiability: liability.totalPayable.toFixed(2),
+        itcClaimed: liability.itcAvailable.toFixed(2),
+        jsonData: {
+          outputCgst: liability.outputCgst,
+          outputSgst: liability.outputSgst,
+          outputIgst: liability.outputIgst,
+          inputCgst: liability.inputCgst,
+          inputSgst: liability.inputSgst,
+          inputIgst: liability.inputIgst,
+          netPayable: liability.totalPayable,
+        }
+      });
+      
+      res.json(updatedFiling);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to auto-populate filing" });
+    }
+  });
+
+  app.post("/api/filing-returns/:id/file-nil", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const filing = await storage.getFilingReturn(id);
+      if (!filing) {
+        return res.status(404).json({ error: "Filing return not found" });
+      }
+      if (filing.businessId !== req.session.businessId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const updatedFiling = await storage.updateFilingReturn(id, {
+        status: "filed",
+        filedDate: new Date().toISOString().split('T')[0],
+        taxLiability: "0",
+        itcClaimed: "0",
+        taxPaid: "0",
+        jsonData: { isNilReturn: true }
+      });
+      
+      res.json(updatedFiling);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to file nil return" });
+    }
+  });
+
+  // Late fee calculator endpoint
+  app.get("/api/late-fee/:returnType/:dueDate", requireAuth, async (req, res) => {
+    try {
+      const { returnType, dueDate } = req.params;
+      const today = new Date();
+      const due = new Date(dueDate);
+      const daysLate = Math.max(0, Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24)));
+      
+      let lateFeePerDay = 0;
+      if (returnType === "GSTR-1" || returnType === "GSTR-3B") {
+        lateFeePerDay = 50; // Rs 50 per day (Rs 25 CGST + Rs 25 SGST)
+      } else if (returnType === "GSTR-9") {
+        lateFeePerDay = 200; // Rs 200 per day
+      } else if (returnType === "CMP-08" || returnType === "GSTR-4") {
+        lateFeePerDay = 50;
+      }
+      
+      const maxLateFee = returnType === "GSTR-9" ? 10000 : 5000;
+      const lateFee = Math.min(daysLate * lateFeePerDay, maxLateFee);
+      
+      // Interest @ 18% p.a. on unpaid tax
+      const { taxAmount = 0 } = req.query;
+      const interest = (parseFloat(taxAmount as string) * 0.18 * daysLate) / 365;
+      
+      res.json({
+        daysLate,
+        lateFee,
+        interest: parseFloat(interest.toFixed(2)),
+        totalPenalty: lateFee + parseFloat(interest.toFixed(2))
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to calculate late fee" });
+    }
+  });
+
+  // ==================== GST INTELLIGENCE ROUTES ====================
+  
+  app.get("/api/insights", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const businessId = req.session.businessId!;
+      const invoices = await storage.getInvoices(businessId);
+      const purchases = await storage.getPurchases(businessId);
+      const filings = await storage.getFilingReturns(businessId);
+      
+      const insights = [];
+      
+      // ITC Optimization check
+      const totalItc = purchases.reduce((sum, p) => sum + parseFloat(p.itcEligible || "0"), 0);
+      const blockedItc = purchases.reduce((sum, p) => sum + parseFloat(p.itcBlocked || "0"), 0);
+      if (blockedItc > 0) {
+        insights.push({
+          type: 'itc_optimization',
+          title: 'Blocked ITC Detected',
+          description: `You have Rs ${blockedItc.toFixed(2)} in blocked ITC. Review blocked items for eligibility.`,
+          potentialSaving: blockedItc,
+          priority: 'high'
+        });
+      }
+      
+      // Compliance check
+      const overdueFilings = filings.filter(f => f.status === "pending" && new Date(f.dueDate) < new Date());
+      if (overdueFilings.length > 0) {
+        insights.push({
+          type: 'compliance',
+          title: 'Overdue Returns',
+          description: `You have ${overdueFilings.length} overdue return(s). File immediately to avoid penalties.`,
+          priority: 'high'
+        });
+      }
+      
+      // Tax saving suggestion
+      const totalGst = invoices.reduce((sum, inv) => 
+        sum + parseFloat(inv.totalCgst || "0") + parseFloat(inv.totalSgst || "0") + parseFloat(inv.totalIgst || "0"), 0);
+      if (totalItc < totalGst * 0.5) {
+        insights.push({
+          type: 'tax_saving',
+          title: 'Low ITC Utilization',
+          description: 'Your ITC is less than 50% of output tax. Consider registering more vendor purchases.',
+          priority: 'medium'
+        });
+      }
+      
+      // Growth insight
+      const thisMonth = new Date().toISOString().slice(0, 7);
+      const thisMonthInvoices = invoices.filter(inv => inv.invoiceDate.startsWith(thisMonth));
+      const revenue = thisMonthInvoices.reduce((sum, inv) => sum + parseFloat(inv.totalAmount || "0"), 0);
+      insights.push({
+        type: 'growth',
+        title: 'Monthly Revenue',
+        description: `This month's revenue: Rs ${revenue.toFixed(2)} from ${thisMonthInvoices.length} invoices.`,
+        priority: 'low'
+      });
+      
+      res.json(insights);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate insights" });
+    }
+  });
+
+  app.get("/api/compliance-score", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const businessId = req.session.businessId!;
+      const filings = await storage.getFilingReturns(businessId);
+      
+      let score = 100;
+      const today = new Date();
+      
+      // Deduct for overdue filings
+      const overdueFilings = filings.filter(f => f.status === "pending" && new Date(f.dueDate) < today);
+      score -= overdueFilings.length * 15;
+      
+      // Deduct for late filings
+      const lateFilings = filings.filter(f => f.status === "filed" && f.filedDate && 
+        new Date(f.filedDate) > new Date(f.dueDate));
+      score -= lateFilings.length * 5;
+      
+      // Bonus for on-time filings
+      const onTimeFilings = filings.filter(f => f.status === "filed" && f.filedDate && 
+        new Date(f.filedDate) <= new Date(f.dueDate));
+      score += Math.min(onTimeFilings.length * 2, 10);
+      
+      score = Math.max(0, Math.min(100, score));
+      
+      res.json({
+        score,
+        rating: score >= 90 ? 'Excellent' : score >= 70 ? 'Good' : score >= 50 ? 'Fair' : 'Poor',
+        overdueCount: overdueFilings.length,
+        lateCount: lateFilings.length,
+        onTimeCount: onTimeFilings.length,
+        suggestions: overdueFilings.length > 0 ? ['File overdue returns immediately'] : 
+                     lateFilings.length > 0 ? ['Try to file before due dates'] : ['Keep up the good work!']
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to calculate compliance score" });
+    }
+  });
+
+  // Monthly summary report endpoint
+  app.get("/api/reports/monthly/:period", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const { period } = req.params;
+      const businessId = req.session.businessId!;
+      
+      const liability = await storage.calculateTaxLiability(businessId, period);
+      const invoices = await storage.getInvoicesByPeriod(businessId, period);
+      const purchases = await storage.getPurchasesByPeriod(businessId, period);
+      const business = await storage.getBusiness(businessId);
+      
+      const totalSales = invoices.reduce((sum, inv) => sum + parseFloat(inv.totalAmount || "0"), 0);
+      const totalPurchases = purchases.reduce((sum, pur) => sum + parseFloat(pur.totalAmount || "0"), 0);
+      
+      res.json({
+        period,
+        businessName: business?.name,
+        gstin: business?.gstin,
+        summary: {
+          invoiceCount: invoices.length,
+          purchaseCount: purchases.length,
+          totalSales,
+          totalPurchases,
+          grossProfit: totalSales - totalPurchases,
+        },
+        taxSummary: {
+          outputCgst: liability.outputCgst,
+          outputSgst: liability.outputSgst,
+          outputIgst: liability.outputIgst,
+          inputCgst: liability.inputCgst,
+          inputSgst: liability.inputSgst,
+          inputIgst: liability.inputIgst,
+          netPayable: liability.totalPayable,
+          itcAvailable: liability.itcAvailable,
+        },
+        generatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to generate monthly report" });
+    }
+  });
+
+  // Due date reminder generation
+  app.post("/api/send-reminders", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const businessId = req.session.businessId!;
+      const userId = req.session.userId!;
+      const filings = await storage.getFilingReturns(businessId);
+      const user = await storage.getUser(userId);
+      
+      const today = new Date();
+      const remindersSent = [];
+      
+      for (const filing of filings) {
+        if (filing.status !== "pending") continue;
+        
+        const dueDate = new Date(filing.dueDate);
+        const daysUntilDue = Math.floor((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (daysUntilDue <= 7 && daysUntilDue >= 0) {
+          const alert = await storage.createAlert({
+            userId,
+            businessId,
+            type: "due_date",
+            title: `${filing.returnType} Due Soon`,
+            message: `Your ${filing.returnType} for period ${filing.period} is due in ${daysUntilDue} days.`,
+            isRead: false,
+            isSent: false,
+          });
+          
+          if (user?.email) {
+            const sent = await sendAlertEmail(
+              user.email,
+              `${filing.returnType} Filing Reminder`,
+              `Your ${filing.returnType} for period ${filing.period} is due on ${filing.dueDate}. Please file before the due date to avoid penalties.`
+            );
+            if (sent) {
+              await storage.markAlertSent(alert.id);
+            }
+          }
+          
+          remindersSent.push(filing.returnType);
+        }
+      }
+      
+      res.json({ 
+        message: `Sent ${remindersSent.length} reminder(s)`,
+        returns: remindersSent 
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to send reminders" });
     }
   });
 

@@ -13,6 +13,8 @@ import {
   payments,
   alerts,
   fileUploads,
+  gstNotices,
+  monthlyAnalytics,
   type User,
   type InsertUser,
   type OtpToken,
@@ -37,7 +39,12 @@ import {
   type InsertAlert,
   type FileUpload,
   type InsertFileUpload,
+  type GstNotice,
+  type InsertGstNotice,
+  type MonthlyAnalytics,
+  type InsertMonthlyAnalytics,
   type DashboardStats,
+  type TaxLiability,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -118,6 +125,22 @@ export interface IStorage {
   createFileUpload(file: InsertFileUpload): Promise<FileUpload>;
   getFileUploads(businessId: string): Promise<FileUpload[]>;
   deleteFileUpload(id: string): Promise<boolean>;
+
+  // GST Notices
+  getGstNotices(businessId: string): Promise<GstNotice[]>;
+  getGstNotice(id: string): Promise<GstNotice | undefined>;
+  createGstNotice(notice: InsertGstNotice): Promise<GstNotice>;
+  updateGstNotice(id: string, notice: Partial<InsertGstNotice>): Promise<GstNotice | undefined>;
+  deleteGstNotice(id: string): Promise<boolean>;
+
+  // Monthly Analytics
+  getMonthlyAnalytics(businessId: string, period?: string): Promise<MonthlyAnalytics[]>;
+  createOrUpdateMonthlyAnalytics(analytics: InsertMonthlyAnalytics): Promise<MonthlyAnalytics>;
+
+  // Tax Calculations
+  calculateTaxLiability(businessId: string, period: string): Promise<TaxLiability>;
+  getInvoicesByPeriod(businessId: string, period: string): Promise<Invoice[]>;
+  getPurchasesByPeriod(businessId: string, period: string): Promise<Purchase[]>;
 
   // Dashboard
   getDashboardStats(businessId: string): Promise<DashboardStats>;
@@ -444,6 +467,120 @@ export class DatabaseStorage implements IStorage {
   async deleteFileUpload(id: string): Promise<boolean> {
     await db.delete(fileUploads).where(eq(fileUploads.id, id));
     return true;
+  }
+
+  // GST Notices
+  async getGstNotices(businessId: string): Promise<GstNotice[]> {
+    return db.select().from(gstNotices).where(eq(gstNotices.businessId, businessId)).orderBy(desc(gstNotices.createdAt));
+  }
+
+  async getGstNotice(id: string): Promise<GstNotice | undefined> {
+    const [notice] = await db.select().from(gstNotices).where(eq(gstNotices.id, id));
+    return notice;
+  }
+
+  async createGstNotice(notice: InsertGstNotice): Promise<GstNotice> {
+    const [created] = await db.insert(gstNotices).values(notice).returning();
+    return created;
+  }
+
+  async updateGstNotice(id: string, notice: Partial<InsertGstNotice>): Promise<GstNotice | undefined> {
+    const [updated] = await db.update(gstNotices).set(notice).where(eq(gstNotices.id, id)).returning();
+    return updated;
+  }
+
+  async deleteGstNotice(id: string): Promise<boolean> {
+    await db.delete(gstNotices).where(eq(gstNotices.id, id));
+    return true;
+  }
+
+  // Monthly Analytics
+  async getMonthlyAnalytics(businessId: string, period?: string): Promise<MonthlyAnalytics[]> {
+    if (period) {
+      return db.select().from(monthlyAnalytics)
+        .where(and(eq(monthlyAnalytics.businessId, businessId), eq(monthlyAnalytics.period, period)));
+    }
+    return db.select().from(monthlyAnalytics)
+      .where(eq(monthlyAnalytics.businessId, businessId))
+      .orderBy(desc(monthlyAnalytics.period));
+  }
+
+  async createOrUpdateMonthlyAnalytics(analytics: InsertMonthlyAnalytics): Promise<MonthlyAnalytics> {
+    const existing = await db.select().from(monthlyAnalytics)
+      .where(and(
+        eq(monthlyAnalytics.businessId, analytics.businessId),
+        eq(monthlyAnalytics.period, analytics.period)
+      ));
+    
+    if (existing.length > 0) {
+      const [updated] = await db.update(monthlyAnalytics)
+        .set(analytics)
+        .where(eq(monthlyAnalytics.id, existing[0].id))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db.insert(monthlyAnalytics).values(analytics).returning();
+    return created;
+  }
+
+  // Tax Calculations
+  async getInvoicesByPeriod(businessId: string, period: string): Promise<Invoice[]> {
+    const month = parseInt(period.substring(0, 2));
+    const year = parseInt(period.substring(2));
+    const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    
+    const allInvoices = await this.getInvoices(businessId);
+    return allInvoices.filter(inv => {
+      const invDate = inv.invoiceDate;
+      return invDate >= startDate && invDate <= endDate;
+    });
+  }
+
+  async getPurchasesByPeriod(businessId: string, period: string): Promise<Purchase[]> {
+    const month = parseInt(period.substring(0, 2));
+    const year = parseInt(period.substring(2));
+    const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    
+    const allPurchases = await this.getPurchases(businessId);
+    return allPurchases.filter(pur => {
+      const purDate = pur.invoiceDate;
+      return purDate >= startDate && purDate <= endDate;
+    });
+  }
+
+  async calculateTaxLiability(businessId: string, period: string): Promise<TaxLiability> {
+    const periodInvoices = await this.getInvoicesByPeriod(businessId, period);
+    const periodPurchases = await this.getPurchasesByPeriod(businessId, period);
+
+    const outputCgst = periodInvoices.reduce((sum, inv) => sum + parseFloat(inv.totalCgst || "0"), 0);
+    const outputSgst = periodInvoices.reduce((sum, inv) => sum + parseFloat(inv.totalSgst || "0"), 0);
+    const outputIgst = periodInvoices.reduce((sum, inv) => sum + parseFloat(inv.totalIgst || "0"), 0);
+
+    const inputCgst = periodPurchases.reduce((sum, pur) => sum + parseFloat(pur.totalCgst || "0"), 0);
+    const inputSgst = periodPurchases.reduce((sum, pur) => sum + parseFloat(pur.totalSgst || "0"), 0);
+    const inputIgst = periodPurchases.reduce((sum, pur) => sum + parseFloat(pur.totalIgst || "0"), 0);
+
+    const netCgst = Math.max(0, outputCgst - inputCgst);
+    const netSgst = Math.max(0, outputSgst - inputSgst);
+    const netIgst = Math.max(0, outputIgst - inputIgst);
+
+    return {
+      period,
+      outputCgst,
+      outputSgst,
+      outputIgst,
+      inputCgst,
+      inputSgst,
+      inputIgst,
+      netCgst,
+      netSgst,
+      netIgst,
+      totalPayable: netCgst + netSgst + netIgst,
+      itcAvailable: inputCgst + inputSgst + inputIgst,
+    };
   }
 
   // Dashboard

@@ -392,6 +392,50 @@ export const indianStates = [
   { code: "38", name: "Ladakh" },
 ];
 
+// GST Notices
+export const gstNotices = pgTable("gst_notices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  noticeType: text("notice_type").notNull(), // demand, reminder, show_cause, assessment, scrutiny
+  noticeNumber: varchar("notice_number", { length: 100 }),
+  noticeDate: text("notice_date").notNull(),
+  responseDate: text("response_date"), // Due date for response
+  subject: text("subject").notNull(),
+  description: text("description"),
+  demandAmount: decimal("demand_amount", { precision: 15, scale: 2 }),
+  status: text("status").default("pending"), // pending, responded, resolved, appealed
+  documentUrl: text("document_url"),
+  responseUrl: text("response_url"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertGstNoticeSchema = createInsertSchema(gstNotices).omit({ id: true, createdAt: true });
+export type InsertGstNotice = z.infer<typeof insertGstNoticeSchema>;
+export type GstNotice = typeof gstNotices.$inferSelect;
+
+// Monthly Analytics
+export const monthlyAnalytics = pgTable("monthly_analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: varchar("business_id").notNull().references(() => businesses.id),
+  period: text("period").notNull(), // MMYYYY
+  totalSales: decimal("total_sales", { precision: 15, scale: 2 }).default("0"),
+  totalPurchases: decimal("total_purchases", { precision: 15, scale: 2 }).default("0"),
+  outputGst: decimal("output_gst", { precision: 15, scale: 2 }).default("0"),
+  inputGst: decimal("input_gst", { precision: 15, scale: 2 }).default("0"),
+  netGstPayable: decimal("net_gst_payable", { precision: 15, scale: 2 }).default("0"),
+  itcUtilized: decimal("itc_utilized", { precision: 15, scale: 2 }).default("0"),
+  cashPaid: decimal("cash_paid", { precision: 15, scale: 2 }).default("0"),
+  invoiceCount: integer("invoice_count").default(0),
+  purchaseCount: integer("purchase_count").default(0),
+  complianceScore: integer("compliance_score").default(100), // 0-100
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertMonthlyAnalyticsSchema = createInsertSchema(monthlyAnalytics).omit({ id: true, createdAt: true });
+export type InsertMonthlyAnalytics = z.infer<typeof insertMonthlyAnalyticsSchema>;
+export type MonthlyAnalytics = typeof monthlyAnalytics.$inferSelect;
+
 // Dashboard Stats type
 export interface DashboardStats {
   totalInvoices: number;
@@ -402,4 +446,37 @@ export interface DashboardStats {
   itcAvailable: number;
   upcomingDeadlines: FilingReturn[];
   recentInvoices: Invoice[];
+}
+
+// Tax Liability calculation result
+export interface TaxLiability {
+  period: string;
+  outputCgst: number;
+  outputSgst: number;
+  outputIgst: number;
+  inputCgst: number;
+  inputSgst: number;
+  inputIgst: number;
+  netCgst: number;
+  netSgst: number;
+  netIgst: number;
+  totalPayable: number;
+  itcAvailable: number;
+}
+
+// Late fee calculation result
+export interface LateFeeResult {
+  daysLate: number;
+  lateFee: number;
+  interest: number;
+  totalPenalty: number;
+}
+
+// GST Intelligence insights
+export interface GstInsight {
+  type: 'tax_saving' | 'itc_optimization' | 'compliance' | 'growth';
+  title: string;
+  description: string;
+  potentialSaving?: number;
+  priority: 'high' | 'medium' | 'low';
 }
