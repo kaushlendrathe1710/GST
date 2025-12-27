@@ -8,6 +8,7 @@ GST Pro is a comprehensive web application for Indian SMEs to manage GST-complia
 - PostgreSQL database with Drizzle ORM
 - Email OTP passwordless authentication
 - Multi-business profile support
+- Stripe payment gateway integration
 - Responsive design with dark/light mode support
 
 ## Project Structure
@@ -41,6 +42,8 @@ GST Pro is a comprehensive web application for Indian SMEs to manage GST-complia
 │   ├── routes.ts          # API endpoints
 │   ├── storage.ts         # PostgreSQL storage layer
 │   ├── email.ts           # SMTP email service
+│   ├── stripeClient.ts    # Stripe integration client
+│   ├── webhookHandlers.ts # Stripe webhook processing
 │   └── index.ts           # Server entry point
 ├── shared/                 # Shared types and schemas
 │   └── schema.ts          # Data models and validation
@@ -85,6 +88,7 @@ GST Pro is a comprehensive web application for Indian SMEs to manage GST-complia
 - ITC utilization planner
 - Suggest optimal ITC vs cash usage
 - Payment history tracking
+- Stripe online payment integration
 
 ### GST Intelligence
 - Compliance health score (0-100)
@@ -170,12 +174,19 @@ GST Pro is a comprehensive web application for Indian SMEs to manage GST-complia
 - `GET /api/alerts` - List all alerts
 - `POST /api/send-reminders` - Send due date reminders
 
+### Stripe Payments
+- `GET /api/stripe/publishable-key` - Get Stripe publishable key
+- `POST /api/stripe/create-checkout-session` - Create Stripe checkout session
+- `GET /api/stripe/session/:sessionId` - Get checkout session details
+- `POST /api/stripe/record-payment` - Record completed Stripe payment
+
 ## Tech Stack
 - **Frontend**: React, TypeScript, Tailwind CSS, shadcn/ui
 - **Backend**: Express.js, TypeScript
 - **Database**: PostgreSQL with Drizzle ORM
 - **Auth**: Email OTP (passwordless)
 - **Email**: Nodemailer with SMTP
+- **Payments**: Stripe (via stripe-replit-sync)
 - **Routing**: wouter
 - **State**: TanStack Query
 - **Forms**: react-hook-form with Zod validation

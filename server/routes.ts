@@ -1082,5 +1082,155 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== STRIPE PAYMENT ROUTES ====================
+  
+  app.get("/api/stripe/publishable-key", async (req, res) => {
+    try {
+      const { getStripePublishableKey } = await import("./stripeClient");
+      const key = await getStripePublishableKey();
+      res.json({ publishableKey: key });
+    } catch (error) {
+      console.error("Failed to get Stripe publishable key:", error);
+      res.status(500).json({ error: "Stripe not configured" });
+    }
+  });
+
+  app.post("/api/stripe/create-checkout-session", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+      
+      const { amount, description, returnType, period, paymentType } = z.object({
+        amount: z.number().positive(),
+        description: z.string().min(1).max(200),
+        returnType: z.string().optional(),
+        period: z.string().optional(),
+        paymentType: z.enum(["gst", "challan", "subscription"]).default("gst"),
+      }).parse(req.body);
+      
+      const business = await storage.getBusiness(req.session.businessId!);
+      if (!business) {
+        return res.status(404).json({ error: "Business not found" });
+      }
+      
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        customer_email: user?.email,
+        line_items: [
+          {
+            price_data: {
+              currency: "inr",
+              unit_amount: Math.round(amount * 100),
+              product_data: {
+                name: description,
+                description: returnType && period 
+                  ? `${returnType} payment for period ${period}`
+                  : "GST Tax Payment",
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          businessId: req.session.businessId!,
+          userId: req.session.userId!,
+          returnType: returnType || "",
+          period: period || "",
+          paymentType,
+        },
+        success_url: `${baseUrl}/payments?success=true&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/payments?canceled=true`,
+      });
+      
+      res.json({ sessionId: session.id, url: session.url });
+    } catch (error) {
+      console.error("Stripe checkout error:", error);
+      res.status(500).json({ error: "Failed to create checkout session" });
+    }
+  });
+
+  app.get("/api/stripe/session/:sessionId", requireAuth, async (req, res) => {
+    try {
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+      
+      const session = await stripe.checkout.sessions.retrieve(req.params.sessionId);
+      
+      res.json({
+        id: session.id,
+        status: session.payment_status,
+        amountTotal: session.amount_total ? session.amount_total / 100 : 0,
+        currency: session.currency,
+        metadata: session.metadata,
+      });
+    } catch (error) {
+      console.error("Stripe session retrieval error:", error);
+      res.status(500).json({ error: "Failed to get session details" });
+    }
+  });
+
+  app.post("/api/stripe/record-payment", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const { sessionId } = z.object({ sessionId: z.string().min(1) }).parse(req.body);
+      
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
+      
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      
+      if (session.payment_status !== "paid") {
+        return res.status(400).json({ error: "Payment not completed" });
+      }
+      
+      const metadata = session.metadata || {};
+      
+      if (!metadata.businessId || metadata.businessId !== req.session.businessId) {
+        return res.status(403).json({ error: "Payment does not belong to this business" });
+      }
+      
+      if (!metadata.userId || metadata.userId !== req.session.userId) {
+        return res.status(403).json({ error: "Payment does not belong to this user" });
+      }
+      
+      const existingPayments = await storage.getPayments(req.session.businessId!);
+      const alreadyRecorded = existingPayments.some(p => 
+        p.challanNumber === `STRIPE-${session.id.slice(-8).toUpperCase()}`
+      );
+      if (alreadyRecorded) {
+        return res.json({ success: true, message: "Payment already recorded" });
+      }
+      
+      const amount = session.amount_total ? session.amount_total / 100 : 0;
+      
+      const payment = await storage.createPayment({
+        businessId: req.session.businessId!,
+        totalAmount: amount.toFixed(2),
+        paymentMode: "stripe",
+        challanNumber: `STRIPE-${session.id.slice(-8).toUpperCase()}`,
+        challanDate: new Date().toISOString().split("T")[0],
+        cgstAmount: "0.00",
+        sgstAmount: "0.00",
+        igstAmount: amount.toFixed(2),
+        cessAmount: "0.00",
+        lateFeeAmount: "0.00",
+        interestAmount: "0.00",
+        status: "paid",
+      });
+      
+      res.json({ success: true, payment });
+    } catch (error) {
+      console.error("Record payment error:", error);
+      res.status(500).json({ error: "Failed to record payment" });
+    }
+  });
+
   return httpServer;
 }

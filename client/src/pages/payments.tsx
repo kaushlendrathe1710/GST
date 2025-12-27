@@ -6,10 +6,10 @@ import {
   CreditCard,
   Plus,
   IndianRupee,
-  Calendar,
   CheckCircle2,
   Clock,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,9 +49,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Payment, FilingReturn, TaxLiability } from "@shared/schema";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useSearch } from "wouter";
 
 const paymentFormSchema = z.object({
   filingReturnId: z.string().optional(),
@@ -73,6 +74,96 @@ const paymentFormSchema = z.object({
 });
 
 type PaymentFormValues = z.infer<typeof paymentFormSchema>;
+
+function StripePaymentDialog({ taxLiability }: { taxLiability?: TaxLiability }) {
+  const [open, setOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+
+  const [amount, setAmount] = useState(taxLiability?.totalPayable?.toString() || "1000");
+  const [description, setDescription] = useState("GST Tax Payment");
+
+  const handleStripePayment = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiRequest("POST", "/api/stripe/create-checkout-session", {
+        amount: parseFloat(amount),
+        description,
+        paymentType: "gst",
+      });
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (error) {
+      toast({ 
+        title: "Error", 
+        description: "Failed to initialize payment. Please try again.", 
+        variant: "destructive" 
+      });
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="gap-2" data-testid="button-stripe-payment">
+          <ExternalLink className="h-4 w-4" />
+          Pay Online
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Pay GST Online</DialogTitle>
+          <DialogDescription>
+            Make a secure payment via Stripe
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Amount (INR)</label>
+            <Input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="Enter amount"
+              data-testid="input-stripe-amount"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Description</label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Payment description"
+              data-testid="input-stripe-description"
+            />
+          </div>
+          {taxLiability && (
+            <div className="text-sm text-muted-foreground p-3 rounded-lg bg-muted">
+              <p>Current Period Tax Due: {formatCurrency(taxLiability.totalPayable)}</p>
+              <p>ITC Available: {formatCurrency(taxLiability.itcAvailable)}</p>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-3">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleStripePayment} 
+            disabled={isLoading || !amount || parseFloat(amount) <= 0}
+            data-testid="button-proceed-stripe"
+          >
+            {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Proceed to Payment
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function PaymentDialog({ filings, taxLiability }: { filings: FilingReturn[]; taxLiability?: TaxLiability }) {
   const [open, setOpen] = useState(false);
@@ -441,6 +532,9 @@ function PaymentDialog({ filings, taxLiability }: { filings: FilingReturn[]; tax
 }
 
 export default function Payments() {
+  const { toast } = useToast();
+  const searchString = useSearch();
+  
   const currentPeriod = (() => {
     const now = new Date();
     const month = (now.getMonth() + 1).toString().padStart(2, '0');
@@ -459,6 +553,35 @@ export default function Payments() {
   const { data: taxLiability } = useQuery<TaxLiability>({
     queryKey: ["/api/tax-liability", currentPeriod],
   });
+
+  const recordPaymentMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await apiRequest("POST", "/api/stripe/record-payment", { sessionId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      toast({ title: "Success", description: "Payment recorded successfully" });
+    },
+    onError: () => {
+      toast({ title: "Note", description: "Payment may already be recorded", variant: "default" });
+    },
+  });
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const success = params.get("success");
+    const sessionId = params.get("session_id");
+    const canceled = params.get("canceled");
+
+    if (success === "true" && sessionId && sessionId.length > 0) {
+      recordPaymentMutation.mutate(sessionId);
+      window.history.replaceState({}, "", "/payments");
+    } else if (canceled === "true") {
+      toast({ title: "Cancelled", description: "Payment was cancelled", variant: "default" });
+      window.history.replaceState({}, "", "/payments");
+    }
+  }, [searchString]);
 
   const totalPaid = payments?.reduce((sum, p) => 
     p.status === "paid" ? sum + parseFloat(p.totalAmount || "0") : sum, 0
@@ -500,7 +623,10 @@ export default function Payments() {
             Track GST payments and challan history
           </p>
         </div>
-        <PaymentDialog filings={filings || []} taxLiability={taxLiability} />
+        <div className="flex gap-3 flex-wrap">
+          <StripePaymentDialog taxLiability={taxLiability} />
+          <PaymentDialog filings={filings || []} taxLiability={taxLiability} />
+        </div>
       </div>
 
       <div className="grid md:grid-cols-4 gap-4">
