@@ -66,6 +66,10 @@ const invoiceFormSchema = z.object({
   placeOfSupply: z.string().min(1, "Place of supply is required"),
   placeOfSupplyCode: z.string().min(1),
   isReverseCharge: z.boolean().default(false),
+  isExport: z.boolean().default(false),
+  exportType: z.string().optional(),
+  shippingAddress: z.string().optional(),
+  linkedInvoiceId: z.string().optional(),
   items: z.array(invoiceItemSchema).min(1, "At least one item is required"),
   notes: z.string().optional(),
   termsAndConditions: z.string().optional(),
@@ -79,20 +83,29 @@ function InvoicePreview({
   customer,
   business,
   isInterState,
+  invoiceType,
+  exportType,
 }: {
   formData: Partial<InvoiceFormValues>;
   items: any[];
   customer?: Customer;
   business?: Business;
   isInterState: boolean;
+  invoiceType: string;
+  exportType?: string;
 }) {
+  const isBillOfSupply = invoiceType === "bill_of_supply";
+  const isExportInvoice = invoiceType === "export_invoice";
+  const isExportWithoutPayment = isExportInvoice && exportType === "without_payment";
+  const noGst = isBillOfSupply || isExportWithoutPayment;
+  
   const calculatedItems = useMemo(() => {
     return items.map((item) => {
       const quantity = typeof item.quantity === 'string' ? parseFloat(item.quantity) || 0 : (item.quantity || 0);
       const rate = typeof item.rate === 'string' ? parseFloat(item.rate) || 0 : (item.rate || 0);
       const discount = typeof item.discount === 'string' ? parseFloat(item.discount) || 0 : (item.discount || 0);
       const discountType = item.discountType || "percentage";
-      const gstRate = typeof item.gstRate === 'string' ? parseFloat(item.gstRate) || 18 : (item.gstRate || 18);
+      const gstRate = noGst ? 0 : (typeof item.gstRate === 'string' ? parseFloat(item.gstRate) || 18 : (item.gstRate || 18));
 
       let baseAmount = quantity * rate;
       let discountAmount = 0;
@@ -106,11 +119,13 @@ function InvoicePreview({
       let cgst = 0,
         sgst = 0,
         igst = 0;
-      if (isInterState) {
-        igst = (taxableAmount * gstRate) / 100;
-      } else {
-        cgst = (taxableAmount * gstRate) / 200;
-        sgst = (taxableAmount * gstRate) / 200;
+      if (!noGst) {
+        if (isInterState || isExportInvoice) {
+          igst = (taxableAmount * gstRate) / 100;
+        } else {
+          cgst = (taxableAmount * gstRate) / 200;
+          sgst = (taxableAmount * gstRate) / 200;
+        }
       }
 
       return {
@@ -122,7 +137,7 @@ function InvoicePreview({
         totalAmount: taxableAmount + cgst + sgst + igst,
       };
     });
-  }, [items, isInterState]);
+  }, [items, isInterState, noGst, isExportInvoice]);
 
   const totals = useMemo(() => {
     return calculatedItems.reduce(
@@ -160,7 +175,13 @@ function InvoicePreview({
               </div>
             </div>
             <div className="text-right">
-              <p className="font-semibold text-lg">TAX INVOICE</p>
+              <p className="font-semibold text-lg">
+                {invoiceType === "tax_invoice" && "TAX INVOICE"}
+                {invoiceType === "bill_of_supply" && "BILL OF SUPPLY"}
+                {invoiceType === "export_invoice" && "EXPORT INVOICE"}
+                {invoiceType === "debit_note" && "DEBIT NOTE"}
+                {invoiceType === "credit_note" && "CREDIT NOTE"}
+              </p>
               <p className="text-sm text-muted-foreground">
                 {generateInvoiceNumber()}
               </p>
@@ -244,22 +265,32 @@ function InvoicePreview({
               <span className="text-muted-foreground">Subtotal</span>
               <span>{formatCurrency(totals.subtotal)}</span>
             </div>
-            {isInterState ? (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">IGST</span>
-                <span>{formatCurrency(totals.igst)}</span>
-              </div>
-            ) : (
+            {!noGst && (
               <>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">CGST</span>
-                  <span>{formatCurrency(totals.cgst)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">SGST</span>
-                  <span>{formatCurrency(totals.sgst)}</span>
-                </div>
+                {(isInterState || isExportInvoice) ? (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">IGST</span>
+                    <span>{formatCurrency(totals.igst)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">CGST</span>
+                      <span>{formatCurrency(totals.cgst)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">SGST</span>
+                      <span>{formatCurrency(totals.sgst)}</span>
+                    </div>
+                  </>
+                )}
               </>
+            )}
+            {noGst && (
+              <div className="flex justify-between text-muted-foreground italic">
+                <span>GST</span>
+                <span>Not Applicable</span>
+              </div>
             )}
             <Separator />
             <div className="flex justify-between font-semibold text-lg">
@@ -304,6 +335,10 @@ export default function InvoiceCreate() {
       placeOfSupply: "",
       placeOfSupplyCode: "",
       isReverseCharge: false,
+      isExport: false,
+      exportType: "",
+      shippingAddress: "",
+      linkedInvoiceId: "",
       items: [
         {
           description: "",
@@ -330,6 +365,18 @@ export default function InvoiceCreate() {
   const selectedCustomer = customers?.find((c) => c.id === selectedCustomerId);
   const placeOfSupplyCode = form.watch("placeOfSupplyCode");
   const isInterState = business?.stateCode !== placeOfSupplyCode && !!placeOfSupplyCode;
+  const watchedInvoiceType = form.watch("invoiceType");
+  
+  const isBillOfSupply = watchedInvoiceType === "bill_of_supply";
+  const isExportInvoice = watchedInvoiceType === "export_invoice";
+  const isDebitNote = watchedInvoiceType === "debit_note";
+  const isCreditNote = watchedInvoiceType === "credit_note";
+  const isDebitOrCreditNote = isDebitNote || isCreditNote;
+  
+  const { data: existingInvoices } = useQuery<any[]>({
+    queryKey: ["/api/invoices"],
+    enabled: isDebitOrCreditNote,
+  });
   
   // Use useWatch for items to ensure reactive updates to preview
   const watchedItems = useWatch({
@@ -340,12 +387,16 @@ export default function InvoiceCreate() {
 
   const createInvoiceMutation = useMutation({
     mutationFn: async (data: InvoiceFormValues) => {
+      const isBillOfSupplyType = data.invoiceType === "bill_of_supply";
+      const isExportWithoutPayment = data.invoiceType === "export_invoice" && data.exportType === "without_payment";
+      const noGst = isBillOfSupplyType || isExportWithoutPayment;
+      
       const calculatedItems = data.items.map((item) => {
         const quantity = item.quantity || 0;
         const rate = item.rate || 0;
         const discount = item.discount || 0;
         const discountType = item.discountType || "percentage";
-        const gstRate = item.gstRate || 18;
+        const gstRate = noGst ? 0 : (item.gstRate || 18);
 
         let baseAmount = quantity * rate;
         let discountAmount = 0;
@@ -359,15 +410,18 @@ export default function InvoiceCreate() {
         let cgst = 0,
           sgst = 0,
           igst = 0;
-        if (isInterState) {
-          igst = (taxableAmount * gstRate) / 100;
-        } else {
-          cgst = (taxableAmount * gstRate) / 200;
-          sgst = (taxableAmount * gstRate) / 200;
+        if (!noGst) {
+          if (isInterState || data.invoiceType === "export_invoice") {
+            igst = (taxableAmount * gstRate) / 100;
+          } else {
+            cgst = (taxableAmount * gstRate) / 200;
+            sgst = (taxableAmount * gstRate) / 200;
+          }
         }
 
         return {
           ...item,
+          gstRate,
           taxableAmount,
           cgstAmount: cgst,
           sgstAmount: sgst,
@@ -391,7 +445,8 @@ export default function InvoiceCreate() {
         ...data,
         businessId: business?.id || "default",
         invoiceNumber: generateInvoiceNumber(),
-        isInterState,
+        isInterState: isInterState || data.invoiceType === "export_invoice",
+        isExport: data.invoiceType === "export_invoice",
         items: calculatedItems,
         subtotal: totals.subtotal.toString(),
         totalCgst: totals.cgst.toString(),
@@ -518,6 +573,97 @@ export default function InvoiceCreate() {
                       )}
                     />
                   </div>
+
+                  {isExportInvoice && (
+                    <div className="grid md:grid-cols-2 gap-4 p-4 border rounded-lg bg-muted/30">
+                      <FormField
+                        control={form.control}
+                        name="exportType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Export Type</FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-export-type">
+                                  <SelectValue placeholder="Select export type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="with_payment">With Payment (IGST)</SelectItem>
+                                <SelectItem value="without_payment">Without Payment (LUT/Bond)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="shippingAddress"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Shipping/Export Address</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Enter shipping address"
+                                {...field}
+                                data-testid="input-shipping-address"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {isDebitOrCreditNote && (
+                    <div className="p-4 border rounded-lg bg-muted/30">
+                      <FormField
+                        control={form.control}
+                        name="linkedInvoiceId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              Original Invoice Reference
+                              <span className="text-muted-foreground ml-2 font-normal">
+                                (Select the invoice this {isDebitNote ? "debit" : "credit"} note refers to)
+                              </span>
+                            </FormLabel>
+                            <Select
+                              onValueChange={field.onChange}
+                              value={field.value}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-linked-invoice">
+                                  <SelectValue placeholder="Select original invoice" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {existingInvoices?.filter(inv => inv.invoiceType === "tax_invoice").map((invoice) => (
+                                  <SelectItem key={invoice.id} value={invoice.id}>
+                                    {invoice.invoiceNumber} - {formatCurrency(parseFloat(invoice.totalAmount))}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {isBillOfSupply && (
+                    <div className="p-4 border rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200">
+                      <p className="text-sm">
+                        Bill of Supply is issued when the supplier is under composition scheme or for exempt/nil-rated supplies. GST will not be charged on this invoice.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="grid md:grid-cols-3 gap-4">
                     <FormField
@@ -894,6 +1040,8 @@ export default function InvoiceCreate() {
                 customer={selectedCustomer}
                 business={business}
                 isInterState={isInterState}
+                invoiceType={watchedInvoiceType}
+                exportType={form.watch("exportType")}
               />
             </div>
           </div>
