@@ -14,6 +14,7 @@ import {
   Bell,
   LogOut,
   ChevronDown,
+  Brain,
 } from "lucide-react";
 import {
   Sidebar,
@@ -85,6 +86,11 @@ const complianceItems = [
     title: "Payments",
     url: "/payments",
     icon: CreditCard,
+  },
+  {
+    title: "GST Intelligence",
+    url: "/insights",
+    icon: Brain,
   },
 ];
 

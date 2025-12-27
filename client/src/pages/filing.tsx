@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   FileCheck,
   Clock,
@@ -7,6 +7,11 @@ import {
   Calendar,
   ArrowUpRight,
   Filter,
+  RefreshCw,
+  FileX,
+  Calculator,
+  Send,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,11 +31,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency, formatDate, getDaysUntilDue, getStatusColor } from "@/lib/utils";
+import { formatCurrency, formatDate, getDaysUntilDue } from "@/lib/utils";
 import type { FilingReturn } from "@shared/schema";
 import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 function ReturnStatusBadge({ status, dueDate }: { status: string; dueDate: string }) {
   const daysLeft = getDaysUntilDue(dueDate);
@@ -72,16 +87,96 @@ function ReturnStatusBadge({ status, dueDate }: { status: string; dueDate: strin
   );
 }
 
+interface LateFeeResult {
+  daysLate: number;
+  lateFee: number;
+  interest: number;
+  totalPenalty: number;
+}
+
+function LateFeeDialog({ returnType, dueDate, taxAmount }: { returnType: string; dueDate: string; taxAmount: number }) {
+  const { data: lateFee, isLoading } = useQuery<LateFeeResult>({
+    queryKey: ["/api/late-fee", returnType, dueDate, taxAmount],
+    queryFn: async () => {
+      const res = await fetch(`/api/late-fee/${returnType}/${dueDate}?taxAmount=${taxAmount}`);
+      return res.json();
+    },
+  });
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1">
+          <Calculator className="h-3 w-3" />
+          Calculate Penalty
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Late Fee & Interest Calculator</DialogTitle>
+          <DialogDescription>
+            Penalty calculation for {returnType} due on {formatDate(dueDate)}
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : lateFee ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Days Late</p>
+                  <p className="text-2xl font-bold text-red-600">{lateFee.daysLate}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Late Fee</p>
+                  <p className="text-2xl font-bold">{formatCurrency(lateFee.lateFee)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Interest (18% p.a.)</p>
+                  <p className="text-2xl font-bold">{formatCurrency(lateFee.interest)}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <p className="text-sm text-muted-foreground">Total Penalty</p>
+                  <p className="text-2xl font-bold text-red-600">{formatCurrency(lateFee.totalPenalty)}</p>
+                </CardContent>
+              </Card>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Late fee: Rs 50/day (GSTR-1/3B), Rs 200/day (GSTR-9). Max cap applies.
+              Interest calculated at 18% p.a. on outstanding tax.
+            </p>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function FilingCard({ 
   returnType, 
   description, 
   dueDay, 
-  frequency 
+  frequency,
+  filingId,
+  onAutoPopulate,
+  onFileNil,
+  isPending
 }: { 
   returnType: string; 
   description: string; 
   dueDay: string;
   frequency: string;
+  filingId?: string;
+  onAutoPopulate?: () => void;
+  onFileNil?: () => void;
+  isPending?: boolean;
 }) {
   return (
     <Card className="hover-elevate">
@@ -105,10 +200,34 @@ function FilingCard({
               </div>
             </div>
           </div>
-          <Button variant="outline" size="sm" className="gap-1 shrink-0">
-            File Now
-            <ArrowUpRight className="h-3 w-3" />
-          </Button>
+          <div className="flex flex-col gap-2">
+            {onAutoPopulate && (
+              <Button 
+                variant="default" 
+                size="sm" 
+                className="gap-1" 
+                onClick={onAutoPopulate}
+                disabled={isPending}
+                data-testid={`button-auto-populate-${returnType}`}
+              >
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                Auto-Populate
+              </Button>
+            )}
+            {onFileNil && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-1" 
+                onClick={onFileNil}
+                disabled={isPending}
+                data-testid={`button-file-nil-${returnType}`}
+              >
+                <FileX className="h-3 w-3" />
+                File Nil Return
+              </Button>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -117,9 +236,54 @@ function FilingCard({
 
 export default function Filing() {
   const [yearFilter, setYearFilter] = useState("2024-25");
+  const { toast } = useToast();
   
   const { data: filingReturns, isLoading } = useQuery<FilingReturn[]>({
     queryKey: ["/api/filing-returns"],
+  });
+
+  const autoPopulateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/filing-returns/${id}/auto-populate`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/filing-returns"] });
+      toast({ title: "Success", description: "Return auto-populated from invoices" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to auto-populate return", variant: "destructive" });
+    }
+  });
+
+  const fileNilMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/filing-returns/${id}/file-nil`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/filing-returns"] });
+      toast({ title: "Success", description: "Nil return filed successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to file nil return", variant: "destructive" });
+    }
+  });
+
+  const sendRemindersMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/send-reminders");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ 
+        title: "Reminders Sent", 
+        description: `Sent ${data.returns?.length || 0} reminder(s) via email` 
+      });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to send reminders", variant: "destructive" });
+    }
   });
 
   const pendingReturns = filingReturns?.filter((r) => r.status !== "filed") || [];
@@ -139,6 +303,12 @@ export default function Filing() {
       frequency: "Monthly",
     },
     {
+      type: "GSTR-4",
+      description: "Annual return for composition scheme taxpayers",
+      dueDay: "30th April",
+      frequency: "Yearly",
+    },
+    {
       type: "GSTR-9",
       description: "Annual return for regular taxpayers",
       dueDay: "31st December",
@@ -151,6 +321,10 @@ export default function Filing() {
       frequency: "Quarterly",
     },
   ];
+
+  const getFilingForType = (type: string) => {
+    return pendingReturns.find(r => r.returnType === type);
+  };
 
   if (isLoading) {
     return (
@@ -181,6 +355,20 @@ export default function Filing() {
           </p>
         </div>
         <div className="flex gap-3 flex-wrap">
+          <Button 
+            variant="outline" 
+            className="gap-2"
+            onClick={() => sendRemindersMutation.mutate()}
+            disabled={sendRemindersMutation.isPending}
+            data-testid="button-send-reminders"
+          >
+            {sendRemindersMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+            Send Reminders
+          </Button>
           <Select value={yearFilter} onValueChange={setYearFilter}>
             <SelectTrigger className="w-[140px]" data-testid="select-year-filter">
               <Filter className="h-4 w-4 mr-2" />
@@ -265,15 +453,22 @@ export default function Filing() {
 
         <TabsContent value="returns" className="space-y-4">
           <div className="grid md:grid-cols-2 gap-4">
-            {returnTypes.map((rt) => (
-              <FilingCard
-                key={rt.type}
-                returnType={rt.type}
-                description={rt.description}
-                dueDay={rt.dueDay}
-                frequency={rt.frequency}
-              />
-            ))}
+            {returnTypes.map((rt) => {
+              const filing = getFilingForType(rt.type);
+              return (
+                <FilingCard
+                  key={rt.type}
+                  returnType={rt.type}
+                  description={rt.description}
+                  dueDay={rt.dueDay}
+                  frequency={rt.frequency}
+                  filingId={filing?.id}
+                  onAutoPopulate={filing ? () => autoPopulateMutation.mutate(filing.id) : undefined}
+                  onFileNil={filing ? () => fileNilMutation.mutate(filing.id) : undefined}
+                  isPending={autoPopulateMutation.isPending || fileNilMutation.isPending}
+                />
+              );
+            })}
           </div>
 
           <Card className="mt-6 border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10">
@@ -286,9 +481,9 @@ export default function Filing() {
                   About GST Filing
                 </h3>
                 <p className="text-sm text-blue-700 dark:text-blue-400 mt-1">
-                  Direct GST portal filing requires GSTN approval. Currently, you can generate 
-                  JSON files for manual upload or use assisted filing through a CA. We're working 
-                  on integrating direct filing capabilities.
+                  Use Auto-Populate to calculate tax liability from your invoices automatically.
+                  File Nil Return if you had no transactions for the period. Direct GST portal 
+                  filing requires GSTN approval - we can generate JSON files for manual upload.
                 </p>
               </div>
             </CardContent>
@@ -311,29 +506,48 @@ export default function Filing() {
                         <TableHead>Period</TableHead>
                         <TableHead>Due Date</TableHead>
                         <TableHead>Tax Liability</TableHead>
+                        <TableHead>ITC Claimed</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Filed Date</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filingReturns.map((filing) => (
-                        <TableRow key={filing.id} data-testid={`row-filing-${filing.id}`}>
-                          <TableCell className="font-medium">{filing.returnType}</TableCell>
-                          <TableCell>{filing.period}</TableCell>
-                          <TableCell>{formatDate(filing.dueDate)}</TableCell>
-                          <TableCell>
-                            {filing.taxLiability 
-                              ? formatCurrency(parseFloat(filing.taxLiability)) 
-                              : "-"}
-                          </TableCell>
-                          <TableCell>
-                            <ReturnStatusBadge status={filing.status} dueDate={filing.dueDate} />
-                          </TableCell>
-                          <TableCell>
-                            {filing.filedDate ? formatDate(filing.filedDate) : "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {filingReturns.map((filing) => {
+                        const isOverdue = getDaysUntilDue(filing.dueDate) < 0 && filing.status === "pending";
+                        return (
+                          <TableRow key={filing.id} data-testid={`row-filing-${filing.id}`}>
+                            <TableCell className="font-medium">{filing.returnType}</TableCell>
+                            <TableCell>{filing.period}</TableCell>
+                            <TableCell>{formatDate(filing.dueDate)}</TableCell>
+                            <TableCell>
+                              {filing.taxLiability 
+                                ? formatCurrency(parseFloat(filing.taxLiability)) 
+                                : "-"}
+                            </TableCell>
+                            <TableCell>
+                              {filing.itcClaimed 
+                                ? formatCurrency(parseFloat(filing.itcClaimed)) 
+                                : "-"}
+                            </TableCell>
+                            <TableCell>
+                              <ReturnStatusBadge status={filing.status} dueDate={filing.dueDate} />
+                            </TableCell>
+                            <TableCell>
+                              {filing.filedDate ? formatDate(filing.filedDate) : "-"}
+                            </TableCell>
+                            <TableCell>
+                              {isOverdue && (
+                                <LateFeeDialog 
+                                  returnType={filing.returnType}
+                                  dueDate={filing.dueDate}
+                                  taxAmount={parseFloat(filing.taxLiability || "0")}
+                                />
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

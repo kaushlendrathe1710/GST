@@ -978,6 +978,7 @@ export async function registerRoutes(
             const sent = await sendAlertEmail(
               user.email,
               `${filing.returnType} Filing Reminder`,
+              `${filing.returnType} Due Soon`,
               `Your ${filing.returnType} for period ${filing.period} is due on ${filing.dueDate}. Please file before the due date to avoid penalties.`
             );
             if (sent) {
