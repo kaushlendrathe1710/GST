@@ -13,6 +13,7 @@ import Invoices from "@/pages/invoices";
 import InvoiceCreate from "@/pages/invoice-create";
 import Customers from "@/pages/customers";
 import Purchases from "@/pages/purchases";
+import PurchaseCreate from "@/pages/purchase-create";
 import Vendors from "@/pages/vendors";
 import ITC from "@/pages/itc";
 import Filing from "@/pages/filing";
@@ -67,6 +68,9 @@ function Router() {
       </Route>
       <Route path="/purchases">
         {() => <ProtectedRoute component={Purchases} />}
+      </Route>
+      <Route path="/purchases/new">
+        {() => <ProtectedRoute component={PurchaseCreate} />}
       </Route>
       <Route path="/vendors">
         {() => <ProtectedRoute component={Vendors} />}
