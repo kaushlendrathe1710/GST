@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Receipt,
   TrendingUp,
@@ -8,9 +8,13 @@ import {
   XCircle,
   ArrowUpRight,
   ArrowDownRight,
+  RefreshCw,
+  Check,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
   Table,
@@ -22,13 +26,21 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency } from "@/lib/utils";
-import type { Purchase, ItcLedger } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import type { Purchase, ItcLedger, Vendor } from "@shared/schema";
 
 export default function ITC() {
+  const { toast } = useToast();
+  
   const { data: purchases } = useQuery<Purchase[]>({
     queryKey: ["/api/purchases"],
   });
 
+  const { data: vendors } = useQuery<Vendor[]>({
+    queryKey: ["/api/vendors"],
+  });
+  
   const { data: itcLedger } = useQuery<ItcLedger[]>({
     queryKey: ["/api/itc-ledger"],
   });
@@ -43,16 +55,67 @@ export default function ITC() {
   const mismatchedAmount = mismatchedPurchases.reduce((acc, p) => acc + Number(p.itcEligible || 0), 0);
 
   const matchRate = totalItcFromPurchases > 0 ? (matchedItc / totalItcFromPurchases) * 100 : 0;
+  
+  const getVendorName = (vendorId: string) => {
+    const vendor = vendors?.find(v => v.id === vendorId);
+    return vendor?.name || vendorId;
+  };
+  
+  const updateGstr2bStatusMutation = useMutation({
+    mutationFn: async ({ purchaseId, status }: { purchaseId: string; status: string }) => {
+      await apiRequest("PATCH", `/api/purchases/${purchaseId}`, { gstr2bStatus: status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchases"] });
+      toast({ title: "Status updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update status", variant: "destructive" });
+    },
+  });
+  
+  const runReconciliationMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/purchases/reconcile", {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchases"] });
+      toast({ 
+        title: "Reconciliation Complete",
+        description: "Purchases have been matched with GSTR-2B data" 
+      });
+    },
+    onError: () => {
+      toast({ 
+        title: "Reconciliation Failed", 
+        description: "Could not complete GSTR-2B reconciliation",
+        variant: "destructive" 
+      });
+    },
+  });
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl md:text-3xl font-semibold" data-testid="text-itc-title">
-          ITC Ledger & Reconciliation
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Track Input Tax Credit and GSTR-2B reconciliation status
-        </p>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-semibold" data-testid="text-itc-title">
+              ITC Ledger & Reconciliation
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Track Input Tax Credit and GSTR-2B reconciliation status
+            </p>
+          </div>
+          <Button
+            onClick={() => runReconciliationMutation.mutate()}
+            disabled={runReconciliationMutation.isPending}
+            className="gap-2"
+            data-testid="button-run-reconciliation"
+          >
+            <RefreshCw className={`h-4 w-4 ${runReconciliationMutation.isPending ? 'animate-spin' : ''}`} />
+            {runReconciliationMutation.isPending ? "Running..." : "Run Reconciliation"}
+          </Button>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-4 gap-4">
@@ -240,6 +303,7 @@ export default function ITC() {
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Issue</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -248,7 +312,7 @@ export default function ITC() {
                         <TableCell className="font-medium">
                           {purchase.invoiceNumber}
                         </TableCell>
-                        <TableCell>{purchase.vendorId}</TableCell>
+                        <TableCell>{getVendorName(purchase.vendorId)}</TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(Number(purchase.totalAmount))}
                         </TableCell>
@@ -268,6 +332,36 @@ export default function ITC() {
                           {purchase.gstr2bStatus === "mismatched"
                             ? "Amount differs from GSTR-2B"
                             : "Not reported by vendor"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => updateGstr2bStatusMutation.mutate({ 
+                                purchaseId: purchase.id, 
+                                status: "matched" 
+                              })}
+                              disabled={updateGstr2bStatusMutation.isPending}
+                              data-testid={`button-mark-matched-${purchase.id}`}
+                            >
+                              <Check className="h-4 w-4 text-green-600" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => updateGstr2bStatusMutation.mutate({ 
+                                purchaseId: purchase.id, 
+                                status: "mismatched" 
+                              })}
+                              disabled={updateGstr2bStatusMutation.isPending}
+                              data-testid={`button-mark-mismatch-${purchase.id}`}
+                            >
+                              <X className="h-4 w-4 text-red-600" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}

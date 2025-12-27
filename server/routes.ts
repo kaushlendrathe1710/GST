@@ -434,29 +434,69 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/purchases/:id", requireAuth, async (req, res) => {
+  app.patch("/api/purchases/:id", requireAuth, requireBusiness, async (req, res) => {
     try {
       const { id } = req.params;
-      const data = insertPurchaseSchema.partial().parse(req.body);
-      const purchase = await storage.updatePurchase(id, data);
-      if (!purchase) {
+      const existingPurchase = await storage.getPurchase(id);
+      if (!existingPurchase) {
         return res.status(404).json({ error: "Purchase not found" });
       }
+      if (existingPurchase.businessId !== req.session.businessId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      const data = insertPurchaseSchema.partial().parse(req.body);
+      const purchase = await storage.updatePurchase(id, data);
       res.json(purchase);
     } catch (error) {
       res.status(400).json({ error: "Invalid purchase data" });
     }
   });
 
-  app.delete("/api/purchases/:id", requireAuth, async (req, res) => {
+  app.delete("/api/purchases/:id", requireAuth, requireBusiness, async (req, res) => {
     try {
-      const deleted = await storage.deletePurchase(req.params.id);
-      if (!deleted) {
+      const existingPurchase = await storage.getPurchase(req.params.id);
+      if (!existingPurchase) {
         return res.status(404).json({ error: "Purchase not found" });
       }
+      if (existingPurchase.businessId !== req.session.businessId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      await storage.deletePurchase(req.params.id);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete purchase" });
+    }
+  });
+
+  app.post("/api/purchases/reconcile", requireAuth, requireBusiness, async (req, res) => {
+    try {
+      const purchases = await storage.getPurchases(req.session.businessId!);
+      const vendors = await storage.getVendors(req.session.businessId!);
+      
+      let matchedCount = 0;
+      let mismatchedCount = 0;
+      
+      for (const purchase of purchases) {
+        if (purchase.gstr2bStatus === "matched") continue;
+        
+        const vendor = vendors.find(v => v.id === purchase.vendorId);
+        
+        if (vendor?.gstin) {
+          await storage.updatePurchase(purchase.id, { gstr2bStatus: "matched" });
+          matchedCount++;
+        } else {
+          await storage.updatePurchase(purchase.id, { gstr2bStatus: "not_found" });
+          mismatchedCount++;
+        }
+      }
+      
+      res.json({ 
+        message: "Reconciliation complete",
+        matched: matchedCount,
+        notFound: mismatchedCount 
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to run reconciliation" });
     }
   });
 
