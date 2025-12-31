@@ -17,6 +17,11 @@ const InputOTP = React.forwardRef<
     className={cn("disabled:cursor-not-allowed", className)}
     autoComplete="one-time-code"
     inputMode="numeric"
+    pushPasswordManagerStrategy="none"
+    data-lpignore="true"
+    data-1p-ignore="true"
+    data-bwignore="true"
+    data-form-type="other"
     {...props}
   />
 ))
