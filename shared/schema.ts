@@ -3,13 +3,19 @@ import { pgTable, text, varchar, integer, boolean, decimal, timestamp, jsonb, pr
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// User roles
+export const userRoles = ["user", "admin", "super_admin"] as const;
+export type UserRole = typeof userRoles[number];
+
 // Users table for email OTP authentication
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
   name: text("name"),
   phone: varchar("phone", { length: 15 }),
+  role: text("role").default("user").notNull(), // user, admin, super_admin
   isVerified: boolean("is_verified").default(false),
+  isRegistered: boolean("is_registered").default(false), // Has completed profile registration
   createdAt: timestamp("created_at").defaultNow(),
   lastLoginAt: timestamp("last_login_at"),
 });
@@ -17,6 +23,9 @@ export const users = pgTable("users", {
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, lastLoginAt: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// Super admin email (non-deletable)
+export const SUPER_ADMIN_EMAIL = "kaushlendra.k12@fms.edu";
 
 // OTP tokens for email verification
 export const otpTokens = pgTable("otp_tokens", {
