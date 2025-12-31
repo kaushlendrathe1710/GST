@@ -23,6 +23,7 @@ import Settings from "@/pages/settings";
 import Insights from "@/pages/insights";
 import Notices from "@/pages/notices";
 import Login from "@/pages/login";
+import Register from "@/pages/register";
 import BusinessSetup from "@/pages/business-setup";
 import NotFound from "@/pages/not-found";
 
@@ -42,7 +43,11 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     return <Redirect to="/login" />;
   }
 
-  if (!currentBusinessId && location !== "/business-setup") {
+  if (!user.isRegistered && location !== "/register") {
+    return <Redirect to="/register" />;
+  }
+
+  if (!currentBusinessId && location !== "/business-setup" && location !== "/register") {
     return <Redirect to="/business-setup" />;
   }
 
@@ -53,6 +58,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
       <Route path="/business-setup">
         {() => <ProtectedRoute component={BusinessSetup} />}
       </Route>
@@ -107,10 +113,10 @@ function AppLayout() {
   const { user, currentBusinessId } = useAuth();
   const [location] = useLocation();
 
-  const isAuthPage = location === "/login";
+  const isAuthPage = location === "/login" || location === "/register";
   const isSetupPage = location === "/business-setup";
 
-  if (isAuthPage || (!currentBusinessId && !isSetupPage)) {
+  if (isAuthPage || (!currentBusinessId && !isSetupPage && user?.isRegistered !== false)) {
     return <Router />;
   }
 

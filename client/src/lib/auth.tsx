@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./queryClient";
 
@@ -6,6 +6,9 @@ interface User {
   id: string;
   email: string;
   name: string | null;
+  phone: string | null;
+  role: "user" | "admin" | "super_admin";
+  isRegistered: boolean;
 }
 
 interface Business {
@@ -19,8 +22,11 @@ interface AuthContextType {
   businesses: Business[];
   currentBusinessId: string | null;
   isLoading: boolean;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
   requestOtp: (email: string) => Promise<void>;
-  verifyOtp: (email: string, otp: string) => Promise<void>;
+  verifyOtp: (email: string, otp: string) => Promise<{ isNewUser: boolean; isRegistered: boolean }>;
+  completeRegistration: (name: string, phone: string) => Promise<void>;
   logout: () => Promise<void>;
   switchBusiness: (businessId: string) => Promise<void>;
 }
@@ -57,6 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const registerMutation = useMutation({
+    mutationFn: async ({ name, phone }: { name: string; phone: string }) => {
+      const response = await apiRequest("POST", "/api/auth/register", { name, phone });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    },
+  });
+
   const logoutMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/auth/logout", {});
@@ -86,10 +102,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifyOtp = async (email: string, otp: string) => {
     setIsLoggingIn(true);
     try {
-      await verifyOtpMutation.mutateAsync({ email, otp });
+      const result = await verifyOtpMutation.mutateAsync({ email, otp });
+      return {
+        isNewUser: result.isNewUser,
+        isRegistered: result.user?.isRegistered ?? false,
+      };
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const completeRegistration = async (name: string, phone: string) => {
+    await registerMutation.mutateAsync({ name, phone });
   };
 
   const logout = async () => {
@@ -100,15 +124,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await switchBusinessMutation.mutateAsync(businessId);
   };
 
+  const user = authData?.user || null;
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isSuperAdmin = user?.role === "super_admin";
+
   return (
     <AuthContext.Provider
       value={{
-        user: authData?.user || null,
+        user,
         businesses: authData?.businesses || [],
         currentBusinessId: authData?.currentBusinessId || null,
         isLoading: isLoading || isLoggingIn,
+        isAdmin,
+        isSuperAdmin,
         requestOtp,
         verifyOtp,
+        completeRegistration,
         logout,
         switchBusiness,
       }}

@@ -73,12 +73,21 @@ export default function Login() {
   const handleOtpSubmit = async (data: z.infer<typeof otpSchema>) => {
     setIsSubmitting(true);
     try {
-      await verifyOtp(email, data.otp);
-      toast({
-        title: "Welcome!",
-        description: "You have been logged in successfully.",
-      });
-      navigate("/");
+      const result = await verifyOtp(email, data.otp);
+      
+      if (!result.isRegistered) {
+        toast({
+          title: "Almost there!",
+          description: "Please complete your profile to continue.",
+        });
+        navigate("/register");
+      } else {
+        toast({
+          title: "Welcome back!",
+          description: "You have been logged in successfully.",
+        });
+        navigate("/");
+      }
     } catch (error) {
       toast({
         title: "Invalid OTP",
@@ -141,6 +150,7 @@ export default function Login() {
                             placeholder="you@example.com"
                             className="pl-10"
                             data-testid="input-email"
+                            autoComplete="email"
                             {...field}
                           />
                         </div>
@@ -178,7 +188,6 @@ export default function Login() {
                           maxLength={6}
                           value={field.value}
                           onChange={field.onChange}
-                          autoComplete="one-time-code"
                           data-testid="input-otp"
                         >
                           <InputOTPGroup>
@@ -207,7 +216,7 @@ export default function Login() {
                     ) : null}
                     Verify and Login
                   </Button>
-                  <div className="flex items-center justify-between text-sm">
+                  <div className="flex items-center justify-between gap-2 text-sm">
                     <Button
                       type="button"
                       variant="ghost"
