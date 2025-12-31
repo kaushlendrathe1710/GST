@@ -28,7 +28,7 @@ import BusinessSetup from "@/pages/business-setup";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
-  const { user, currentBusinessId, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
   const [location] = useLocation();
 
   if (isLoading) {
@@ -45,10 +45,6 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (!user.isRegistered && location !== "/register") {
     return <Redirect to="/register" />;
-  }
-
-  if (!currentBusinessId && location !== "/business-setup" && location !== "/register") {
-    return <Redirect to="/business-setup" />;
   }
 
   return <Component />;
@@ -114,9 +110,8 @@ function AppLayout() {
   const [location] = useLocation();
 
   const isAuthPage = location === "/login" || location === "/register";
-  const isSetupPage = location === "/business-setup";
 
-  if (isAuthPage || isSetupPage || !currentBusinessId) {
+  if (isAuthPage) {
     return <Router />;
   }
 
