@@ -176,7 +176,8 @@ export default function Login() {
             </Form>
           ) : (
             <Form {...otpForm}>
-              <form onSubmit={otpForm.handleSubmit(handleOtpSubmit)} className="space-y-6" autoComplete="off">
+              <form onSubmit={otpForm.handleSubmit(handleOtpSubmit)} className="space-y-6" autoComplete="off" data-form-type="other">
+                <input type="hidden" name="prevent_autofill" value="" autoComplete="off" />
                 <FormField
                   control={otpForm.control}
                   name="otp"
@@ -189,6 +190,8 @@ export default function Login() {
                           value={field.value}
                           onChange={field.onChange}
                           data-testid="input-otp"
+                          autoComplete="off"
+                          name={`otp_${Date.now()}`}
                         >
                           <InputOTPGroup>
                             <InputOTPSlot index={0} />
