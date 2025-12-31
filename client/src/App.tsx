@@ -116,7 +116,7 @@ function AppLayout() {
   const isAuthPage = location === "/login" || location === "/register";
   const isSetupPage = location === "/business-setup";
 
-  if (isAuthPage || (!currentBusinessId && !isSetupPage && user?.isRegistered !== false)) {
+  if (isAuthPage || isSetupPage || !currentBusinessId) {
     return <Router />;
   }
 
