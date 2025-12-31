@@ -166,7 +166,7 @@ export default function Login() {
             </Form>
           ) : (
             <Form {...otpForm}>
-              <form onSubmit={otpForm.handleSubmit(handleOtpSubmit)} className="space-y-6">
+              <form onSubmit={otpForm.handleSubmit(handleOtpSubmit)} className="space-y-6" autoComplete="off">
                 <FormField
                   control={otpForm.control}
                   name="otp"
@@ -178,6 +178,7 @@ export default function Login() {
                           maxLength={6}
                           value={field.value}
                           onChange={field.onChange}
+                          autoComplete="one-time-code"
                           data-testid="input-otp"
                         >
                           <InputOTPGroup>

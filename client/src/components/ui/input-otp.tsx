@@ -15,6 +15,8 @@ const InputOTP = React.forwardRef<
       containerClassName
     )}
     className={cn("disabled:cursor-not-allowed", className)}
+    autoComplete="one-time-code"
+    inputMode="numeric"
     {...props}
   />
 ))
