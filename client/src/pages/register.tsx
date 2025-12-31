@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -28,6 +28,8 @@ export default function Register() {
   const { toast } = useToast();
   const { user, completeRegistration, isLoading } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const hasCheckedAuth = useRef(false);
 
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
@@ -38,14 +40,22 @@ export default function Register() {
   });
 
   useEffect(() => {
-    if (!isLoading) {
+    const timer = setTimeout(() => {
+      setIsInitializing(false);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoading && !isInitializing && !hasCheckedAuth.current) {
+      hasCheckedAuth.current = true;
       if (!user) {
         navigate("/login");
       } else if (user.isRegistered) {
         navigate("/");
       }
     }
-  }, [user, isLoading, navigate]);
+  }, [user, isLoading, isInitializing, navigate]);
 
   const handleSubmit = async (data: z.infer<typeof registerSchema>) => {
     setIsSubmitting(true);
@@ -67,7 +77,7 @@ export default function Register() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || isInitializing) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
