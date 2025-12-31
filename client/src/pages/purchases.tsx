@@ -50,6 +50,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { BusinessRequired } from "@/components/business-required";
 import type { Purchase, Vendor } from "@shared/schema";
 
 export default function Purchases() {
@@ -140,6 +141,7 @@ export default function Purchases() {
   }, 0) || 0;
 
   return (
+    <BusinessRequired>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -359,5 +361,6 @@ export default function Purchases() {
         </DialogContent>
       </Dialog>
     </div>
+    </BusinessRequired>
   );
 }

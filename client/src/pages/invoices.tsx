@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/utils";
+import { BusinessRequired } from "@/components/business-required";
 import type { Invoice, Customer } from "@shared/schema";
 
 export default function Invoices() {
@@ -89,6 +90,7 @@ export default function Invoices() {
   }
 
   return (
+    <BusinessRequired>
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -237,5 +239,6 @@ export default function Invoices() {
         </CardContent>
       </Card>
     </div>
+    </BusinessRequired>
   );
 }

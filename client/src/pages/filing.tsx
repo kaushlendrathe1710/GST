@@ -46,6 +46,7 @@ import type { FilingReturn } from "@shared/schema";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { BusinessRequired } from "@/components/business-required";
 
 function ReturnStatusBadge({ status, dueDate }: { status: string; dueDate: string }) {
   const daysLeft = getDaysUntilDue(dueDate);
@@ -344,6 +345,7 @@ export default function Filing() {
   }
 
   return (
+    <BusinessRequired>
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -567,5 +569,6 @@ export default function Filing() {
         </TabsContent>
       </Tabs>
     </div>
+    </BusinessRequired>
   );
 }

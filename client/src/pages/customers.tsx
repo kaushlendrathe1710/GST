@@ -51,6 +51,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { validateGSTIN } from "@/lib/utils";
+import { BusinessRequired } from "@/components/business-required";
 import type { Customer } from "@shared/schema";
 import { indianStates } from "@shared/schema";
 
@@ -450,6 +451,7 @@ export default function Customers() {
   }
 
   return (
+    <BusinessRequired>
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -527,5 +529,6 @@ export default function Customers() {
         </Card>
       )}
     </div>
+    </BusinessRequired>
   );
 }

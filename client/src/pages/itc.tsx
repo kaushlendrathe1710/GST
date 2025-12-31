@@ -28,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatCurrency } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { BusinessRequired } from "@/components/business-required";
 import type { Purchase, ItcLedger, Vendor } from "@shared/schema";
 
 export default function ITC() {
@@ -95,6 +96,7 @@ export default function ITC() {
   });
 
   return (
+    <BusinessRequired>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div>
         <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -429,5 +431,6 @@ export default function ITC() {
         </TabsContent>
       </Tabs>
     </div>
+    </BusinessRequired>
   );
 }

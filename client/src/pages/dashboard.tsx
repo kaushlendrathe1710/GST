@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BusinessRequired } from "@/components/business-required";
 import { formatCurrency, formatDate, getDaysUntilDue, getStatusColor } from "@/lib/utils";
 import type { DashboardStats } from "@shared/schema";
 
@@ -134,6 +135,7 @@ export default function Dashboard() {
   }
 
   return (
+    <BusinessRequired>
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -270,5 +272,6 @@ export default function Dashboard() {
         </CardContent>
       </Card>
     </div>
+    </BusinessRequired>
   );
 }

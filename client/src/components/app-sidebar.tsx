@@ -107,6 +107,11 @@ const settingsItems = [
     icon: Bell,
   },
   {
+    title: "Business Setup",
+    url: "/business-setup",
+    icon: Building2,
+  },
+  {
     title: "Settings",
     url: "/settings",
     icon: Settings,

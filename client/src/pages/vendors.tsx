@@ -49,6 +49,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { BusinessRequired } from "@/components/business-required";
 import type { Vendor } from "@shared/schema";
 import { indianStates } from "@shared/schema";
 
@@ -194,6 +195,7 @@ export default function Vendors() {
   );
 
   return (
+    <BusinessRequired>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -514,5 +516,6 @@ export default function Vendors() {
         </DialogContent>
       </Dialog>
     </div>
+    </BusinessRequired>
   );
 }
