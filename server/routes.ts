@@ -15,6 +15,8 @@ import {
   insertPaymentSchema,
   insertGstNoticeSchema,
   insertAlertSchema,
+  SUPER_ADMIN_EMAIL,
+  type UserRole,
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -45,10 +47,32 @@ function requireBusiness(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function requireRole(...roles: UserRole[]) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      return res.status(401).json({ error: "User not found" });
+    }
+    
+    if (!roles.includes(user.role as UserRole)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    next();
+  };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Seed super admin on startup
+  await storage.seedSuperAdmin();
 
   // ==================== AUTH ROUTES ====================
   
@@ -91,11 +115,21 @@ export async function registerRoutes(
       
       // Get or create user
       let user = await storage.getUserByEmail(email);
+      const isNewUser = !user;
+      
       if (!user) {
-        user = await storage.createUser({ email, isVerified: true });
+        // Determine if this is super admin
+        const isSuperAdmin = email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+        user = await storage.createUser({ 
+          email, 
+          isVerified: true,
+          isRegistered: isSuperAdmin, // Super admin is auto-registered
+          role: isSuperAdmin ? "super_admin" : "user",
+        });
       } else if (!user.isVerified) {
         await storage.updateUser(user.id, { isVerified: true });
       }
+      
       // Update last login
       await storage.updateUserLastLogin(user.id);
       
@@ -109,13 +143,55 @@ export async function registerRoutes(
       }
       
       res.json({ 
-        user: { id: user.id, email: user.email, name: user.name },
+        user: { 
+          id: user.id, 
+          email: user.email, 
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          isRegistered: user.isRegistered,
+        },
         businesses,
-        currentBusinessId: req.session.businessId
+        currentBusinessId: req.session.businessId,
+        isNewUser,
       });
     } catch (error) {
       console.error("OTP verify error:", error);
       res.status(400).json({ error: "Verification failed" });
+    }
+  });
+  
+  // Complete registration (first-time users)
+  app.post("/api/auth/register", requireAuth, async (req, res) => {
+    try {
+      const { name, phone } = z.object({ 
+        name: z.string().min(2, "Name must be at least 2 characters"),
+        phone: z.string().min(10, "Phone must be at least 10 digits"),
+      }).parse(req.body);
+      
+      const user = await storage.updateUser(req.session.userId!, {
+        name,
+        phone,
+        isRegistered: true,
+      });
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      res.json({ 
+        user: { 
+          id: user.id, 
+          email: user.email, 
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          isRegistered: user.isRegistered,
+        }
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(400).json({ error: "Registration failed" });
     }
   });
   
@@ -135,7 +211,14 @@ export async function registerRoutes(
       const businesses = await storage.getBusinessesByUser(user.id);
       
       res.json({
-        user: { id: user.id, email: user.email, name: user.name },
+        user: { 
+          id: user.id, 
+          email: user.email, 
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          isRegistered: user.isRegistered,
+        },
         businesses,
         currentBusinessId: req.session.businessId || null
       });

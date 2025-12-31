@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, gte, lte } from "drizzle-orm";
+import { eq, and, desc, asc, gte, lte, ne } from "drizzle-orm";
 import { db } from "./db";
 import {
   users,
@@ -15,6 +15,7 @@ import {
   fileUploads,
   gstNotices,
   monthlyAnalytics,
+  SUPER_ADMIN_EMAIL,
   type User,
   type InsertUser,
   type OtpToken,
@@ -45,6 +46,7 @@ import {
   type InsertMonthlyAnalytics,
   type DashboardStats,
   type TaxLiability,
+  type UserRole,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -54,6 +56,9 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
   updateUserLastLogin(id: string): Promise<void>;
+  getAllUsers(): Promise<User[]>;
+  deleteUser(id: string): Promise<boolean>;
+  seedSuperAdmin(): Promise<void>;
 
   // OTP
   createOtpToken(token: InsertOtpToken): Promise<OtpToken>;
@@ -173,6 +178,42 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserLastLogin(id: string): Promise<void> {
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const user = await this.getUser(id);
+    if (!user) return false;
+    
+    // Prevent deleting super admin
+    if (user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      throw new Error("Cannot delete super admin user");
+    }
+    
+    await db.delete(users).where(eq(users.id, id));
+    return true;
+  }
+
+  async seedSuperAdmin(): Promise<void> {
+    const existingAdmin = await this.getUserByEmail(SUPER_ADMIN_EMAIL);
+    if (!existingAdmin) {
+      await db.insert(users).values({
+        email: SUPER_ADMIN_EMAIL.toLowerCase(),
+        name: "Super Admin",
+        role: "super_admin",
+        isVerified: true,
+        isRegistered: true,
+      });
+      console.log("Super admin user seeded:", SUPER_ADMIN_EMAIL);
+    } else if (existingAdmin.role !== "super_admin") {
+      await db.update(users)
+        .set({ role: "super_admin", isRegistered: true })
+        .where(eq(users.id, existingAdmin.id));
+      console.log("Super admin role updated for:", SUPER_ADMIN_EMAIL);
+    }
   }
 
   // OTP
