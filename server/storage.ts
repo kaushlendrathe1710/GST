@@ -151,6 +151,17 @@ export interface IStorage {
 
   // Dashboard
   getDashboardStats(businessId: string): Promise<DashboardStats>;
+
+  // Admin
+  getAllBusinesses(): Promise<(Business & { ownerEmail?: string })[]>;
+  getSystemStats(): Promise<{
+    totalUsers: number;
+    totalBusinesses: number;
+    totalInvoices: number;
+    totalRevenue: number;
+    recentUsers: User[];
+  }>;
+  updateUserRole(id: string, role: UserRole): Promise<User | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -687,6 +698,67 @@ export class DatabaseStorage implements IStorage {
       upcomingDeadlines,
       recentInvoices: allInvoices.slice(0, 5),
     };
+  }
+
+  // Admin
+  async getAllBusinesses(): Promise<(Business & { ownerEmail?: string })[]> {
+    const allBusinesses = await db.select().from(businesses).orderBy(desc(businesses.createdAt));
+    const businessesWithOwner = await Promise.all(
+      allBusinesses.map(async (business) => {
+        const owner = await this.getUser(business.userId);
+        return {
+          ...business,
+          ownerEmail: owner?.email,
+        };
+      })
+    );
+    return businessesWithOwner;
+  }
+
+  async getSystemStats(): Promise<{
+    totalUsers: number;
+    totalBusinesses: number;
+    totalInvoices: number;
+    totalRevenue: number;
+    recentUsers: User[];
+  }> {
+    const allUsers = await db.select().from(users);
+    const allBusinesses = await db.select().from(businesses);
+    const allInvoices = await db.select().from(invoices);
+
+    const totalRevenue = allInvoices.reduce(
+      (sum, inv) => sum + parseFloat(inv.totalAmount || "0"),
+      0
+    );
+
+    const recentUsers = allUsers
+      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime())
+      .slice(0, 10);
+
+    return {
+      totalUsers: allUsers.length,
+      totalBusinesses: allBusinesses.length,
+      totalInvoices: allInvoices.length,
+      totalRevenue,
+      recentUsers,
+    };
+  }
+
+  async updateUserRole(id: string, role: UserRole): Promise<User | undefined> {
+    const user = await this.getUser(id);
+    if (!user) return undefined;
+
+    // Prevent changing super admin role
+    if (user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      throw new Error("Cannot change super admin role");
+    }
+
+    const [updated] = await db
+      .update(users)
+      .set({ role })
+      .where(eq(users.id, id))
+      .returning();
+    return updated;
   }
 }
 

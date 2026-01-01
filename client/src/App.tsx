@@ -22,6 +22,7 @@ import Alerts from "@/pages/alerts";
 import Settings from "@/pages/settings";
 import Insights from "@/pages/insights";
 import Notices from "@/pages/notices";
+import Admin from "@/pages/admin";
 import Login from "@/pages/login";
 import Register from "@/pages/register";
 import BusinessSetup from "@/pages/business-setup";
@@ -99,6 +100,9 @@ function Router() {
       </Route>
       <Route path="/notices">
         {() => <ProtectedRoute component={Notices} />}
+      </Route>
+      <Route path="/admin">
+        {() => <ProtectedRoute component={Admin} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

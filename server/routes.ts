@@ -1404,5 +1404,80 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== ADMIN ROUTES ====================
+
+  // Get all users (admin/super_admin only)
+  app.get("/api/admin/users", requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users);
+    } catch (error) {
+      console.error("Get all users error:", error);
+      res.status(500).json({ error: "Failed to get users" });
+    }
+  });
+
+  // Update user role (admin/super_admin only)
+  app.patch("/api/admin/users/:id/role", requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { role } = z.object({
+        role: z.enum(["user", "admin"]),
+      }).parse(req.body);
+
+      const updated = await storage.updateUserRole(id, role);
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update user role error:", error);
+      if (error.message?.includes("super admin")) {
+        return res.status(403).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to update user role" });
+    }
+  });
+
+  // Delete user (admin/super_admin only)
+  app.delete("/api/admin/users/:id", requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteUser(id);
+      if (!deleted) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete user error:", error);
+      if (error.message?.includes("super admin")) {
+        return res.status(403).json({ error: error.message });
+      }
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  // Get all businesses (admin/super_admin only)
+  app.get("/api/admin/businesses", requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const businesses = await storage.getAllBusinesses();
+      res.json(businesses);
+    } catch (error) {
+      console.error("Get all businesses error:", error);
+      res.status(500).json({ error: "Failed to get businesses" });
+    }
+  });
+
+  // Get system stats (admin/super_admin only)
+  app.get("/api/admin/stats", requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const stats = await storage.getSystemStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Get system stats error:", error);
+      res.status(500).json({ error: "Failed to get system stats" });
+    }
+  });
+
   return httpServer;
 }

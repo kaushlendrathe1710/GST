@@ -16,6 +16,8 @@ import {
   ChevronDown,
   Brain,
   FileWarning,
+  ShieldCheck,
+  Crown,
 } from "lucide-react";
 import {
   Sidebar,
@@ -118,9 +120,17 @@ const settingsItems = [
   },
 ];
 
+const adminItems = [
+  {
+    title: "Admin Panel",
+    url: "/admin",
+    icon: ShieldCheck,
+  },
+];
+
 export function AppSidebar() {
   const [location] = useLocation();
-  const { user, businesses, currentBusinessId, logout, switchBusiness } = useAuth();
+  const { user, businesses, currentBusinessId, logout, switchBusiness, isAdmin, isSuperAdmin } = useAuth();
 
   const currentBusiness = businesses.find((b) => b.id === currentBusinessId);
 
@@ -259,15 +269,39 @@ export function AppSidebar() {
             {renderMenuItems(settingsItems)}
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {(isAdmin || isSuperAdmin) && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="flex items-center gap-2">
+              {isSuperAdmin ? <Crown className="h-3 w-3 text-purple-500" /> : <ShieldCheck className="h-3 w-3 text-blue-500" />}
+              Administration
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              {renderMenuItems(adminItems)}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4">
         {user && (
           <div className="space-y-3">
             <div className="rounded-lg border border-border bg-card p-3">
-              <p className="text-xs text-muted-foreground truncate">
-                {user.email}
-              </p>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs text-muted-foreground truncate">
+                  {user.email}
+                </p>
+                {isSuperAdmin && (
+                  <Badge variant="default" className="bg-purple-600 dark:bg-purple-700 text-[10px] px-1.5 py-0">
+                    Super Admin
+                  </Badge>
+                )}
+                {isAdmin && !isSuperAdmin && (
+                  <Badge variant="default" className="bg-blue-600 dark:bg-blue-700 text-[10px] px-1.5 py-0">
+                    Admin
+                  </Badge>
+                )}
+              </div>
               <p className="text-sm font-medium">
                 {currentBusiness?.name || "No business selected"}
               </p>
