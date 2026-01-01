@@ -3,7 +3,6 @@ const MSG91_BASE_URL = "https://control.msg91.com/api/v5";
 export async function sendOtpSms(mobile: string, otp: string): Promise<boolean> {
   const authKey = process.env.MSG91_AUTH_KEY;
   const templateId = process.env.MSG91_TEMPLATE_ID;
-  const senderId = process.env.MSG91_SENDER_ID || "TXTIND";
 
   if (!authKey || !templateId) {
     console.log(`[DEV MODE] SMS OTP for ${mobile}: ${otp}`);
@@ -11,33 +10,36 @@ export async function sendOtpSms(mobile: string, otp: string): Promise<boolean> 
   }
 
   try {
+    // Format mobile number with country code (91 for India)
     const formattedMobile = mobile.startsWith("91") ? mobile : `91${mobile}`;
     
-    // Use flow API to send custom OTP with template
-    const response = await fetch(`${MSG91_BASE_URL}/flow/`, {
+    // Use flow API with correct format matching MSG91 curl
+    const response = await fetch(`${MSG91_BASE_URL}/flow`, {
       method: "POST",
       headers: {
+        "accept": "application/json",
         "authkey": authKey,
-        "Content-Type": "application/json",
+        "content-type": "application/json",
       },
       body: JSON.stringify({
-        flow_id: templateId,
-        sender: senderId,
-        mobiles: formattedMobile,
-        VAR1: otp,
-        VAR2: "10",
+        template_id: templateId,
+        recipients: [
+          {
+            mobiles: formattedMobile,
+            var: otp,
+          }
+        ]
       }),
     });
 
     const result = await response.json();
     console.log("MSG91 response:", JSON.stringify(result));
     
-    if (result.type === "success" || result.message === "Message sent successfully") {
+    if (result.type === "success" || result.message?.includes("success")) {
       console.log(`SMS OTP sent successfully to ${mobile}`);
       return true;
     } else {
       console.error("MSG91 error:", result);
-      // Still return true in dev to allow testing
       console.log(`[FALLBACK] SMS OTP for ${mobile}: ${otp}`);
       return true;
     }
