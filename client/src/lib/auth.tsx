@@ -58,18 +58,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await apiRequest("POST", "/api/auth/verify-otp", { email, otp });
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-    },
   });
 
   const registerMutation = useMutation({
     mutationFn: async ({ name, phone }: { name: string; phone: string }) => {
       const response = await apiRequest("POST", "/api/auth/register", { name, phone });
       return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
 
@@ -103,6 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoggingIn(true);
     try {
       const result = await verifyOtpMutation.mutateAsync({ email, otp });
+      // Wait for auth query to refetch before returning
+      await queryClient.refetchQueries({ queryKey: ["/api/auth/me"] });
       return {
         isNewUser: result.isNewUser,
         isRegistered: result.user?.isRegistered ?? false,
@@ -114,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const completeRegistration = async (name: string, phone: string) => {
     await registerMutation.mutateAsync({ name, phone });
+    // Wait for auth query to refetch before returning
+    await queryClient.refetchQueries({ queryKey: ["/api/auth/me"] });
   };
 
   const logout = async () => {
