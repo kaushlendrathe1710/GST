@@ -102,6 +102,15 @@ function Router() {
         {() => <ProtectedRoute component={Notices} />}
       </Route>
       <Route path="/admin">
+        {() => <Redirect to="/admin/overview" />}
+      </Route>
+      <Route path="/admin/overview">
+        {() => <ProtectedRoute component={Admin} />}
+      </Route>
+      <Route path="/admin/users">
+        {() => <ProtectedRoute component={Admin} />}
+      </Route>
+      <Route path="/admin/businesses">
         {() => <ProtectedRoute component={Admin} />}
       </Route>
       <Route component={NotFound} />

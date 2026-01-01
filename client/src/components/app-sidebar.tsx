@@ -129,7 +129,7 @@ const settingsItems = [
 const adminOverviewItems = [
   {
     title: "Overview",
-    url: "/admin",
+    url: "/admin/overview",
     icon: BarChart3,
   },
 ];
@@ -137,7 +137,7 @@ const adminOverviewItems = [
 const adminUserItems = [
   {
     title: "User Management",
-    url: "/admin?tab=users",
+    url: "/admin/users",
     icon: UserCog,
   },
 ];
@@ -145,7 +145,7 @@ const adminUserItems = [
 const adminBusinessItems = [
   {
     title: "All Businesses",
-    url: "/admin?tab=businesses",
+    url: "/admin/businesses",
     icon: Building,
   },
 ];
