@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import Dashboard from "@/pages/dashboard";
 import Invoices from "@/pages/invoices";
 import InvoiceCreate from "@/pages/invoice-create";
+import InvoiceView from "@/pages/invoice-view";
 import Customers from "@/pages/customers";
 import Purchases from "@/pages/purchases";
 import PurchaseCreate from "@/pages/purchase-create";
@@ -67,6 +68,12 @@ function Router() {
       </Route>
       <Route path="/invoices/new">
         {() => <ProtectedRoute component={InvoiceCreate} />}
+      </Route>
+      <Route path="/invoices/:id/edit">
+        {() => <ProtectedRoute component={InvoiceCreate} />}
+      </Route>
+      <Route path="/invoices/:id">
+        {() => <ProtectedRoute component={InvoiceView} />}
       </Route>
       <Route path="/customers">
         {() => <ProtectedRoute component={Customers} />}

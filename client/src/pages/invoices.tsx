@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 import {
   FileText,
   Plus,
@@ -32,6 +32,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -42,11 +52,17 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/utils";
 import { BusinessRequired } from "@/components/business-required";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Invoice, Customer } from "@shared/schema";
 
 export default function Invoices() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
 
   const { data: invoices, isLoading: invoicesLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -56,9 +72,91 @@ export default function Invoices() {
     queryKey: ["/api/customers"],
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      await apiRequest("DELETE", `/api/invoices/${invoiceId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({
+        title: "Invoice Deleted",
+        description: "The invoice has been deleted successfully.",
+      });
+      setDeleteDialogOpen(false);
+      setInvoiceToDelete(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete invoice",
+        variant: "destructive",
+      });
+    },
+  });
+
   const getCustomerName = (customerId: string) => {
     const customer = customers?.find((c) => c.id === customerId);
     return customer?.name || "Unknown Customer";
+  };
+
+  const handleViewInvoice = (invoice: Invoice) => {
+    navigate(`/invoices/${invoice.id}`);
+  };
+
+  const handleEditInvoice = (invoice: Invoice) => {
+    navigate(`/invoices/${invoice.id}/edit`);
+  };
+
+  const handleDownloadPdf = async (invoice: Invoice) => {
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}/pdf`);
+      if (!response.ok) {
+        throw new Error("Failed to generate PDF");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${invoice.invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast({
+        title: "PDF Downloaded",
+        description: `Invoice ${invoice.invoiceNumber} downloaded successfully.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to download PDF. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSendWhatsApp = (invoice: Invoice) => {
+    const customer = customers?.find((c) => c.id === invoice.customerId);
+    const phone = customer?.phone?.replace(/\D/g, "") || "";
+    const dueDateText = invoice.dueDate ? `\nDue Date: ${formatDate(invoice.dueDate)}` : "";
+    const message = encodeURIComponent(
+      `Invoice ${invoice.invoiceNumber}\nAmount: ${formatCurrency(parseFloat(invoice.totalAmount))}${dueDateText}`
+    );
+    const whatsappUrl = phone
+      ? `https://wa.me/${phone}?text=${message}`
+      : `https://wa.me/?text=${message}`;
+    window.open(whatsappUrl, "_blank");
+  };
+
+  const handleDeleteInvoice = (invoice: Invoice) => {
+    setInvoiceToDelete(invoice);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (invoiceToDelete) {
+      deleteMutation.mutate(invoiceToDelete.id);
+    }
   };
 
   const filteredInvoices = invoices?.filter((invoice) => {
@@ -189,24 +287,40 @@ export default function Invoices() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleViewInvoice(invoice)}
+                                data-testid={`button-view-invoice-${invoice.id}`}
+                              >
                                 <Eye className="h-4 w-4 mr-2" />
                                 View Invoice
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleEditInvoice(invoice)}
+                                data-testid={`button-edit-invoice-${invoice.id}`}
+                              >
                                 <Edit className="h-4 w-4 mr-2" />
                                 Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleDownloadPdf(invoice)}
+                                data-testid={`button-download-pdf-${invoice.id}`}
+                              >
                                 <Download className="h-4 w-4 mr-2" />
                                 Download PDF
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleSendWhatsApp(invoice)}
+                                data-testid={`button-whatsapp-${invoice.id}`}
+                              >
                                 <Send className="h-4 w-4 mr-2" />
                                 Send via WhatsApp
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-destructive">
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handleDeleteInvoice(invoice)}
+                                data-testid={`button-delete-invoice-${invoice.id}`}
+                              >
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 Delete
                               </DropdownMenuItem>
@@ -238,6 +352,28 @@ export default function Invoices() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete invoice {invoiceToDelete?.invoiceNumber}? 
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </BusinessRequired>
   );

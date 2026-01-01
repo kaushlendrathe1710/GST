@@ -575,6 +575,69 @@ export async function registerRoutes(
     }
   });
 
+  // PDF Generation for Invoice
+  app.get("/api/invoices/:id/pdf", requireAuth, async (req, res) => {
+    try {
+      const PDFDocument = (await import("pdfkit")).default;
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      
+      const customer = await storage.getCustomer(invoice.customerId);
+      const business = await storage.getBusiness(invoice.businessId);
+      
+      const doc = new PDFDocument({ margin: 50 });
+      
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename=${invoice.invoiceNumber}.pdf`);
+      
+      doc.pipe(res);
+      
+      // Header
+      doc.fontSize(20).text(business?.name || "Business Name", { align: "center" });
+      doc.fontSize(10).text(`GSTIN: ${business?.gstin || "N/A"}`, { align: "center" });
+      doc.moveDown();
+      
+      // Invoice Details
+      doc.fontSize(16).text("TAX INVOICE", { align: "center" });
+      doc.moveDown();
+      
+      doc.fontSize(10);
+      doc.text(`Invoice No: ${invoice.invoiceNumber}`);
+      doc.text(`Date: ${invoice.invoiceDate}`);
+      if (invoice.dueDate) doc.text(`Due Date: ${invoice.dueDate}`);
+      doc.moveDown();
+      
+      // Customer Details
+      doc.text("Bill To:");
+      doc.text(customer?.name || "Customer");
+      if (customer?.address) doc.text(customer.address);
+      if (customer?.gstin) doc.text(`GSTIN: ${customer.gstin}`);
+      doc.moveDown();
+      
+      // Items
+      doc.text("Items:", { underline: true });
+      const items = invoice.items as any[] || [];
+      items.forEach((item: any, index: number) => {
+        doc.text(`${index + 1}. ${item.description || item.name} - Qty: ${item.quantity} x Rs ${item.rate || item.unitPrice} = Rs ${item.amount || (item.quantity * (item.rate || item.unitPrice))}`);
+      });
+      doc.moveDown();
+      
+      // Totals
+      doc.text(`Subtotal: Rs ${invoice.subtotal || invoice.totalAmount}`);
+      if (invoice.totalCgst && parseFloat(invoice.totalCgst) > 0) doc.text(`CGST: Rs ${invoice.totalCgst}`);
+      if (invoice.totalSgst && parseFloat(invoice.totalSgst) > 0) doc.text(`SGST: Rs ${invoice.totalSgst}`);
+      if (invoice.totalIgst && parseFloat(invoice.totalIgst) > 0) doc.text(`IGST: Rs ${invoice.totalIgst}`);
+      doc.fontSize(12).text(`Total: Rs ${invoice.totalAmount}`, { underline: true });
+      
+      doc.end();
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      res.status(500).json({ error: "Failed to generate PDF" });
+    }
+  });
+
   app.get("/api/invoices/next-number", requireAuth, requireBusiness, async (req, res) => {
     try {
       const lastNumber = await storage.getLastInvoiceNumber(req.session.businessId!);
