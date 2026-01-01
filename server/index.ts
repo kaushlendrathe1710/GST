@@ -103,6 +103,12 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 
 const PgSession = connectPgSimple(session);
+
+// Trust proxy for production (behind reverse proxy)
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 app.use(
   session({
     store: new PgSession({
@@ -113,9 +119,11 @@ app.use(
     secret: process.env.SESSION_SECRET || "gst-pro-dev-secret",
     resave: false,
     saveUninitialized: false,
+    proxy: process.env.NODE_ENV === "production",
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     },
   })
