@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import {
   LayoutDashboard,
@@ -18,6 +19,10 @@ import {
   FileWarning,
   ShieldCheck,
   Crown,
+  UserCog,
+  BarChart3,
+  Building,
+  ArrowLeftRight,
 } from "lucide-react";
 import {
   Sidebar,
@@ -120,19 +125,50 @@ const settingsItems = [
   },
 ];
 
-const adminItems = [
+// Admin Panel menu items - shown when in admin mode
+const adminOverviewItems = [
   {
-    title: "Admin Panel",
+    title: "Overview",
     url: "/admin",
-    icon: ShieldCheck,
+    icon: BarChart3,
+  },
+];
+
+const adminUserItems = [
+  {
+    title: "User Management",
+    url: "/admin?tab=users",
+    icon: UserCog,
+  },
+];
+
+const adminBusinessItems = [
+  {
+    title: "All Businesses",
+    url: "/admin?tab=businesses",
+    icon: Building,
   },
 ];
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, businesses, currentBusinessId, logout, switchBusiness, isAdmin, isSuperAdmin } = useAuth();
+  const [adminMode, setAdminMode] = useState(() => {
+    // Persist admin mode preference in localStorage
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("adminMode") === "true";
+    }
+    return false;
+  });
+
+  const handleAdminModeToggle = () => {
+    const newMode = !adminMode;
+    setAdminMode(newMode);
+    localStorage.setItem("adminMode", String(newMode));
+  };
 
   const currentBusiness = businesses.find((b) => b.id === currentBusinessId);
+  const showAdminToggle = isAdmin || isSuperAdmin;
 
   const renderMenuItems = (items: typeof salesItems) => (
     <SidebarMenu>
@@ -179,107 +215,144 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <div className="px-4 pb-2">
-            <Link href="/invoices/new">
-              <Button
-                className="w-full gap-2"
-                data-testid="button-create-invoice-sidebar"
-              >
-                <Plus className="h-4 w-4" />
-                Create Invoice
-              </Button>
-            </Link>
-          </div>
-        </SidebarGroup>
-
-        {businesses.length > 1 && (
+        {/* Mode Toggle for Admins */}
+        {showAdminToggle && (
           <SidebarGroup>
-            <div className="px-4">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-between gap-2"
-                    data-testid="dropdown-business-selector"
-                  >
-                    <span className="truncate">
-                      {currentBusiness?.name || "Select Business"}
-                    </span>
-                    <ChevronDown className="h-4 w-4 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuLabel>Switch Business</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {businesses.map((business) => (
-                    <DropdownMenuItem
-                      key={business.id}
-                      onClick={() => switchBusiness(business.id)}
-                      data-testid={`menu-item-business-${business.id}`}
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-medium">{business.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {business.gstin}
-                        </span>
-                      </div>
-                      {business.id === currentBusinessId && (
-                        <Badge variant="secondary" className="ml-auto">
-                          Active
-                        </Badge>
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/business-setup" className="w-full">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Business
-                    </Link>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+            <div className="px-4 pb-2">
+              <Button
+                variant={adminMode ? "default" : "outline"}
+                className="w-full gap-2"
+                onClick={handleAdminModeToggle}
+                data-testid="button-toggle-admin-mode"
+              >
+                <ArrowLeftRight className="h-4 w-4" />
+                {adminMode ? "Switch to User View" : "Switch to Admin Panel"}
+              </Button>
             </div>
           </SidebarGroup>
         )}
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Sales</SidebarGroupLabel>
-          <SidebarGroupContent>{renderMenuItems(salesItems)}</SidebarGroupContent>
-        </SidebarGroup>
+        {/* Admin Panel View */}
+        {adminMode && showAdminToggle ? (
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel className="flex items-center gap-2">
+                {isSuperAdmin ? <Crown className="h-3 w-3 text-purple-500" /> : <ShieldCheck className="h-3 w-3 text-blue-500" />}
+                Admin Panel
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                {renderMenuItems(adminOverviewItems)}
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Purchases</SidebarGroupLabel>
-          <SidebarGroupContent>
-            {renderMenuItems(purchaseItems)}
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>User Management</SidebarGroupLabel>
+              <SidebarGroupContent>
+                {renderMenuItems(adminUserItems)}
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Compliance</SidebarGroupLabel>
-          <SidebarGroupContent>
-            {renderMenuItems(complianceItems)}
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Business Management</SidebarGroupLabel>
+              <SidebarGroupContent>
+                {renderMenuItems(adminBusinessItems)}
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        ) : (
+          <>
+            {/* User View */}
+            <SidebarGroup>
+              <div className="px-4 pb-2">
+                <Link href="/invoices/new">
+                  <Button
+                    className="w-full gap-2"
+                    data-testid="button-create-invoice-sidebar"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create Invoice
+                  </Button>
+                </Link>
+              </div>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>System</SidebarGroupLabel>
-          <SidebarGroupContent>
-            {renderMenuItems(settingsItems)}
-          </SidebarGroupContent>
-        </SidebarGroup>
+            {businesses.length > 1 && (
+              <SidebarGroup>
+                <div className="px-4">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-between gap-2"
+                        data-testid="dropdown-business-selector"
+                      >
+                        <span className="truncate">
+                          {currentBusiness?.name || "Select Business"}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-56">
+                      <DropdownMenuLabel>Switch Business</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {businesses.map((business) => (
+                        <DropdownMenuItem
+                          key={business.id}
+                          onClick={() => switchBusiness(business.id)}
+                          data-testid={`menu-item-business-${business.id}`}
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-medium">{business.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {business.gstin}
+                            </span>
+                          </div>
+                          {business.id === currentBusinessId && (
+                            <Badge variant="secondary" className="ml-auto">
+                              Active
+                            </Badge>
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link href="/business-setup" className="w-full">
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Business
+                        </Link>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </SidebarGroup>
+            )}
 
-        {(isAdmin || isSuperAdmin) && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="flex items-center gap-2">
-              {isSuperAdmin ? <Crown className="h-3 w-3 text-purple-500" /> : <ShieldCheck className="h-3 w-3 text-blue-500" />}
-              Administration
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              {renderMenuItems(adminItems)}
-            </SidebarGroupContent>
-          </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Sales</SidebarGroupLabel>
+              <SidebarGroupContent>{renderMenuItems(salesItems)}</SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>Purchases</SidebarGroupLabel>
+              <SidebarGroupContent>
+                {renderMenuItems(purchaseItems)}
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>Compliance</SidebarGroupLabel>
+              <SidebarGroupContent>
+                {renderMenuItems(complianceItems)}
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>System</SidebarGroupLabel>
+              <SidebarGroupContent>
+                {renderMenuItems(settingsItems)}
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
         )}
       </SidebarContent>
 
