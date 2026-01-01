@@ -1,7 +1,7 @@
-# GST Pro - Invoice & Filing Application
+# Tax Buddy - Invoice & Filing Application
 
 ## Overview
-GST Pro is a comprehensive web application for Indian SMEs to manage GST-compliant invoices, track GST return filings, and optimize tax compliance. The application provides an intuitive interface for creating tax invoices, managing customers and vendors, purchase tracking, ITC management, and monitoring compliance deadlines.
+Tax Buddy is a comprehensive web application for Indian SMEs to manage GST-compliant invoices, track GST return filings, and optimize tax compliance. The application provides an intuitive interface for creating tax invoices, managing customers and vendors, purchase tracking, ITC management, and monitoring compliance deadlines.
 
 ## Current State
 - Full-featured GST management application

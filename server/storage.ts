@@ -63,6 +63,8 @@ export interface IStorage {
   // OTP
   createOtpToken(token: InsertOtpToken): Promise<OtpToken>;
   getValidOtp(email: string, otp: string): Promise<OtpToken | undefined>;
+  getValidOtpByPhone(phone: string, otp: string): Promise<OtpToken | undefined>;
+  getUserByPhone(phone: string): Promise<User | undefined>;
   markOtpUsed(id: string): Promise<void>;
 
   // Business
@@ -220,7 +222,7 @@ export class DatabaseStorage implements IStorage {
   async createOtpToken(token: InsertOtpToken): Promise<OtpToken> {
     const [created] = await db.insert(otpTokens).values({
       ...token,
-      email: token.email.toLowerCase(),
+      email: token.email?.toLowerCase() || null,
     }).returning();
     return created;
   }
@@ -239,6 +241,29 @@ export class DatabaseStorage implements IStorage {
         )
       );
     return token;
+  }
+
+  async getValidOtpByPhone(phone: string, otp: string): Promise<OtpToken | undefined> {
+    const now = new Date();
+    const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+    const [token] = await db
+      .select()
+      .from(otpTokens)
+      .where(
+        and(
+          eq(otpTokens.phone, normalizedPhone),
+          eq(otpTokens.otp, otp),
+          eq(otpTokens.isUsed, false),
+          gte(otpTokens.expiresAt, now)
+        )
+      );
+    return token;
+  }
+
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+    const [user] = await db.select().from(users).where(eq(users.phone, normalizedPhone));
+    return user;
   }
 
   async markOtpUsed(id: string): Promise<void> {

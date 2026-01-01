@@ -27,10 +27,11 @@ export type User = typeof users.$inferSelect;
 // Super admin email (non-deletable)
 export const SUPER_ADMIN_EMAIL = "kaushlendra.k12@fms.edu";
 
-// OTP tokens for email verification
+// OTP tokens for email/phone verification
 export const otpTokens = pgTable("otp_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: text("email").notNull(),
+  email: text("email"),
+  phone: varchar("phone", { length: 15 }),
   otp: varchar("otp", { length: 6 }).notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   isUsed: boolean("is_used").default(false),

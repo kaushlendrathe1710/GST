@@ -129,7 +129,7 @@ export default function BusinessSetup() {
           <CardTitle className="text-2xl">Set Up Your Business</CardTitle>
           <CardDescription>
             {businesses.length === 0
-              ? "Add your first business to get started with GST Pro"
+              ? "Add your first business to get started with Tax Buddy"
               : "Add another business profile"}
           </CardDescription>
         </CardHeader>

@@ -25,7 +25,9 @@ interface AuthContextType {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   requestOtp: (email: string) => Promise<void>;
+  requestMobileOtp: (phone: string) => Promise<void>;
   verifyOtp: (email: string, otp: string) => Promise<{ isNewUser: boolean; isRegistered: boolean }>;
+  verifyMobileOtp: (phone: string, otp: string) => Promise<{ isNewUser: boolean; isRegistered: boolean }>;
   completeRegistration: (name: string, phone: string) => Promise<void>;
   logout: () => Promise<void>;
   switchBusiness: (businessId: string) => Promise<void>;
@@ -53,9 +55,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  const requestMobileOtpMutation = useMutation({
+    mutationFn: async (phone: string) => {
+      await apiRequest("POST", "/api/auth/request-mobile-otp", { phone });
+    },
+  });
+
   const verifyOtpMutation = useMutation({
     mutationFn: async ({ email, otp }: { email: string; otp: string }) => {
       const response = await apiRequest("POST", "/api/auth/verify-otp", { email, otp });
+      return response.json();
+    },
+  });
+
+  const verifyMobileOtpMutation = useMutation({
+    mutationFn: async ({ phone, otp }: { phone: string; otp: string }) => {
+      const response = await apiRequest("POST", "/api/auth/verify-mobile-otp", { phone, otp });
       return response.json();
     },
   });
@@ -93,11 +108,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await requestOtpMutation.mutateAsync(email);
   };
 
+  const requestMobileOtp = async (phone: string) => {
+    await requestMobileOtpMutation.mutateAsync(phone);
+  };
+
   const verifyOtp = async (email: string, otp: string) => {
     setIsLoggingIn(true);
     try {
       const result = await verifyOtpMutation.mutateAsync({ email, otp });
       // Wait for auth query to refetch before returning
+      await queryClient.refetchQueries({ queryKey: ["/api/auth/me"] });
+      return {
+        isNewUser: result.isNewUser,
+        isRegistered: result.user?.isRegistered ?? false,
+      };
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const verifyMobileOtp = async (phone: string, otp: string) => {
+    setIsLoggingIn(true);
+    try {
+      const result = await verifyMobileOtpMutation.mutateAsync({ phone, otp });
       await queryClient.refetchQueries({ queryKey: ["/api/auth/me"] });
       return {
         isNewUser: result.isNewUser,
@@ -136,7 +169,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAdmin,
         isSuperAdmin,
         requestOtp,
+        requestMobileOtp,
         verifyOtp,
+        verifyMobileOtp,
         completeRegistration,
         logout,
         switchBusiness,

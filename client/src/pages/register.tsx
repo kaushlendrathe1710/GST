@@ -62,7 +62,7 @@ export default function Register() {
     try {
       await completeRegistration(data.name, data.phone);
       toast({
-        title: "Welcome to GST Pro!",
+        title: "Welcome to Tax Buddy!",
         description: "Your account has been set up successfully.",
       });
       navigate("/");
@@ -98,7 +98,7 @@ export default function Register() {
           </div>
           <CardTitle className="text-2xl">Complete Your Profile</CardTitle>
           <CardDescription>
-            Please provide your details to get started with GST Pro
+            Please provide your details to get started with Tax Buddy
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -4,6 +4,7 @@ import session from "express-session";
 import multer from "multer";
 import { storage } from "./storage";
 import { sendOtpEmail, sendAlertEmail } from "./email";
+import { sendOtpSms } from "./sms";
 import { uploadToS3, getSignedUploadUrl } from "./s3";
 import {
   insertBusinessSchema,
@@ -95,6 +96,94 @@ export async function registerRoutes(
     } catch (error) {
       console.error("OTP request error:", error);
       res.status(400).json({ error: "Failed to send OTP" });
+    }
+  });
+
+  // Request OTP via Mobile
+  app.post("/api/auth/request-mobile-otp", async (req, res) => {
+    try {
+      const { phone } = z.object({ 
+        phone: z.string().min(10, "Phone must be at least 10 digits")
+      }).parse(req.body);
+      
+      const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+      
+      // Check if user with this phone exists
+      const existingUser = await storage.getUserByPhone(normalizedPhone);
+      if (!existingUser) {
+        return res.status(400).json({ 
+          error: "No account found with this mobile number. Please login with email first and register your mobile number." 
+        });
+      }
+      
+      const otp = generateOtp();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      
+      await storage.createOtpToken({ phone: normalizedPhone, otp, expiresAt, isUsed: false });
+      
+      const sent = await sendOtpSms(normalizedPhone, otp);
+      if (!sent) {
+        console.log(`[DEV] SMS OTP for ${phone}: ${otp}`);
+      }
+      
+      res.json({ message: "OTP sent to your mobile", phone: normalizedPhone });
+    } catch (error) {
+      console.error("Mobile OTP request error:", error);
+      res.status(400).json({ error: "Failed to send OTP" });
+    }
+  });
+
+  // Verify Mobile OTP and login
+  app.post("/api/auth/verify-mobile-otp", async (req, res) => {
+    try {
+      const { phone, otp } = z.object({ 
+        phone: z.string().min(10),
+        otp: z.string().length(6)
+      }).parse(req.body);
+      
+      const normalizedPhone = phone.replace(/\D/g, "").slice(-10);
+      
+      const token = await storage.getValidOtpByPhone(normalizedPhone, otp);
+      if (!token) {
+        return res.status(400).json({ error: "Invalid or expired OTP" });
+      }
+      
+      await storage.markOtpUsed(token.id);
+      
+      // Get user by phone
+      const user = await storage.getUserByPhone(normalizedPhone);
+      if (!user) {
+        return res.status(400).json({ error: "User not found" });
+      }
+      
+      // Update last login
+      await storage.updateUserLastLogin(user.id);
+      
+      // Set session
+      req.session.userId = user.id;
+      
+      // Get user's businesses
+      const businesses = await storage.getBusinessesByUser(user.id);
+      if (businesses.length === 1) {
+        req.session.businessId = businesses[0].id;
+      }
+      
+      res.json({ 
+        user: { 
+          id: user.id, 
+          email: user.email, 
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          isRegistered: user.isRegistered,
+        },
+        businesses,
+        currentBusinessId: req.session.businessId,
+        isNewUser: false,
+      });
+    } catch (error) {
+      console.error("Mobile OTP verify error:", error);
+      res.status(400).json({ error: "Verification failed" });
     }
   });
   

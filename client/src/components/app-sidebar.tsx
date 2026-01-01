@@ -160,7 +160,7 @@ export function AppSidebar() {
             <Building2 className="h-6 w-6 text-primary-foreground" />
           </div>
           <div className="flex flex-col">
-            <span className="text-lg font-semibold">GST Pro</span>
+            <span className="text-lg font-semibold">Tax Buddy</span>
             <span className="text-xs text-muted-foreground">
               Invoice & Filing
             </span>

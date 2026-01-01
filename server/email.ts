@@ -18,12 +18,12 @@ export async function sendOtpEmail(email: string, otp: string): Promise<boolean>
 
   try {
     await transporter.sendMail({
-      from: `"GST Pro" <${process.env.SMTP_USER}>`,
+      from: `"Tax Buddy" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: "Your GST Pro Login OTP",
+      subject: "Your Tax Buddy Login OTP",
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">GST Pro - One Time Password</h2>
+          <h2 style="color: #2563eb;">Tax Buddy - One Time Password</h2>
           <p>Your OTP for login is:</p>
           <div style="background: #f3f4f6; padding: 20px; text-align: center; border-radius: 8px;">
             <h1 style="color: #1f2937; font-size: 36px; letter-spacing: 8px; margin: 0;">${otp}</h1>
@@ -53,16 +53,16 @@ export async function sendAlertEmail(
 
   try {
     await transporter.sendMail({
-      from: `"GST Pro" <${process.env.SMTP_USER}>`,
+      from: `"Tax Buddy" <${process.env.SMTP_USER}>`,
       to: email,
-      subject: `GST Pro: ${subject}`,
+      subject: `Tax Buddy: ${subject}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2563eb;">GST Pro Alert</h2>
+          <h2 style="color: #2563eb;">Tax Buddy Alert</h2>
           <h3 style="color: #1f2937;">${title}</h3>
           <p style="color: #4b5563;">${message}</p>
           <hr style="border: 1px solid #e5e7eb; margin: 20px 0;" />
-          <p style="color: #9ca3af; font-size: 12px;">This is an automated message from GST Pro.</p>
+          <p style="color: #9ca3af; font-size: 12px;">This is an automated message from Tax Buddy.</p>
         </div>
       `,
     });
