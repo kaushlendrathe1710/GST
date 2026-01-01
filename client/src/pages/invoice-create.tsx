@@ -44,8 +44,8 @@ import {
   numberToWords,
 } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Customer, Business, InvoiceItem } from "@shared/schema";
-import { indianStates, hsnCodes } from "@shared/schema";
+import type { Customer, Business, InvoiceItem, HsnCode } from "@shared/schema";
+import { indianStates, defaultTermsAndConditions } from "@shared/schema";
 
 const invoiceItemSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -325,6 +325,10 @@ export default function InvoiceCreate() {
     queryKey: ["/api/business"],
   });
 
+  const { data: hsnCodes } = useQuery<HsnCode[]>({
+    queryKey: ["/api/hsn-codes"],
+  });
+
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
     defaultValues: {
@@ -352,7 +356,7 @@ export default function InvoiceCreate() {
         },
       ],
       notes: "",
-      termsAndConditions: "",
+      termsAndConditions: defaultTermsAndConditions,
     },
   });
 
@@ -834,7 +838,7 @@ export default function InvoiceCreate() {
                               <Select
                                 onValueChange={(value) => {
                                   field.onChange(value);
-                                  const hsn = hsnCodes.find((h) => h.code === value);
+                                  const hsn = hsnCodes?.find((h) => h.code === value);
                                   if (hsn) {
                                     form.setValue(`items.${index}.gstRate`, hsn.gstRate);
                                   }
@@ -847,7 +851,7 @@ export default function InvoiceCreate() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  {hsnCodes.map((hsn) => (
+                                  {(hsnCodes || []).map((hsn) => (
                                     <SelectItem key={hsn.code} value={hsn.code}>
                                       {hsn.code} - {hsn.description} ({hsn.gstRate}%)
                                     </SelectItem>
@@ -972,38 +976,18 @@ export default function InvoiceCreate() {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Additional Details</CardTitle>
+                  <CardTitle className="text-lg">Terms & Conditions</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Notes</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Additional notes for the customer"
-                            className="min-h-[80px]"
-                            {...field}
-                            data-testid="textarea-notes"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
+                <CardContent>
                   <FormField
                     control={form.control}
                     name="termsAndConditions"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Terms & Conditions</FormLabel>
                         <FormControl>
                           <Textarea
                             placeholder="Terms and conditions for this invoice"
-                            className="min-h-[80px]"
+                            className="min-h-[120px]"
                             {...field}
                             data-testid="textarea-terms"
                           />

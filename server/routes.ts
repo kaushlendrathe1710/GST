@@ -72,8 +72,9 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  // Seed super admin on startup
+  // Seed super admin and HSN codes on startup
   await storage.seedSuperAdmin();
+  await storage.seedHsnCodes();
 
   // ==================== AUTH ROUTES ====================
   
@@ -1231,6 +1232,58 @@ export async function registerRoutes(
       });
     } catch (error) {
       res.status(500).json({ error: "Failed to send reminders" });
+    }
+  });
+
+  // ==================== HSN CODES ROUTES ====================
+  
+  app.get("/api/hsn-codes", requireAuth, async (req, res) => {
+    try {
+      const codes = await storage.getHsnCodes();
+      res.json(codes);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch HSN codes" });
+    }
+  });
+
+  app.post("/api/hsn-codes", requireAuth, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const { code, description, gstRate, isActive = true } = req.body;
+      if (!code || !description || gstRate === undefined) {
+        return res.status(400).json({ error: "Code, description and GST rate are required" });
+      }
+      const hsnCode = await storage.createHsnCode({ code, description, gstRate, isActive });
+      res.status(201).json(hsnCode);
+    } catch (error: any) {
+      if (error.message?.includes("unique") || error.code === "23505") {
+        return res.status(400).json({ error: "HSN code already exists" });
+      }
+      res.status(500).json({ error: "Failed to create HSN code" });
+    }
+  });
+
+  app.patch("/api/hsn-codes/:id", requireAuth, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updated = await storage.updateHsnCode(id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "HSN code not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update HSN code" });
+    }
+  });
+
+  app.delete("/api/hsn-codes/:id", requireAuth, requireRole("admin", "super_admin"), async (req, res) => {
+    try {
+      const deleted = await storage.deleteHsnCode(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "HSN code not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete HSN code" });
     }
   });
 

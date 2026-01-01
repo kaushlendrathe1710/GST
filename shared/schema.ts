@@ -326,8 +326,22 @@ export const insertFileUploadSchema = createInsertSchema(fileUploads).omit({ id:
 export type InsertFileUpload = z.infer<typeof insertFileUploadSchema>;
 export type FileUpload = typeof fileUploads.$inferSelect;
 
-// HSN Codes lookup
-export const hsnCodes = [
+// HSN/SAC Codes table (dynamic - managed by admin)
+export const hsnCodesTable = pgTable("hsn_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: varchar("code", { length: 20 }).notNull().unique(),
+  description: text("description").notNull(),
+  gstRate: integer("gst_rate").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertHsnCodeSchema = createInsertSchema(hsnCodesTable).omit({ id: true, createdAt: true });
+export type InsertHsnCode = z.infer<typeof insertHsnCodeSchema>;
+export type HsnCode = typeof hsnCodesTable.$inferSelect;
+
+// Default HSN Codes (for seeding)
+export const defaultHsnCodes = [
   { code: "0101", description: "Live horses, asses, mules and hinnies", gstRate: 0 },
   { code: "0201", description: "Meat of bovine animals, fresh or chilled", gstRate: 0 },
   { code: "1001", description: "Wheat and meslin", gstRate: 0 },
@@ -360,6 +374,16 @@ export const hsnCodes = [
   { code: "9996", description: "Personal services", gstRate: 18 },
   { code: "9997", description: "Other services", gstRate: 18 },
 ];
+
+// Keep for backward compatibility
+export const hsnCodes = defaultHsnCodes;
+
+// Default Terms & Conditions for invoices
+export const defaultTermsAndConditions = `1. Payment is due within 30 days from the invoice date.
+2. Goods once sold will not be taken back or exchanged.
+3. Interest @18% p.a. will be charged on overdue payments.
+4. Subject to jurisdiction of local courts only.
+5. E&OE (Errors and Omissions Excepted).`;
 
 // Indian States with codes
 export const indianStates = [

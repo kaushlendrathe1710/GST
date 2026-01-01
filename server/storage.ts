@@ -15,6 +15,8 @@ import {
   fileUploads,
   gstNotices,
   monthlyAnalytics,
+  hsnCodesTable,
+  defaultHsnCodes,
   SUPER_ADMIN_EMAIL,
   type User,
   type InsertUser,
@@ -47,6 +49,8 @@ import {
   type DashboardStats,
   type TaxLiability,
   type UserRole,
+  type HsnCode,
+  type InsertHsnCode,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -162,6 +166,14 @@ export interface IStorage {
     recentUsers: User[];
   }>;
   updateUserRole(id: string, role: UserRole): Promise<User | undefined>;
+
+  // HSN Codes
+  getHsnCodes(): Promise<HsnCode[]>;
+  getHsnCode(id: string): Promise<HsnCode | undefined>;
+  createHsnCode(code: InsertHsnCode): Promise<HsnCode>;
+  updateHsnCode(id: string, code: Partial<InsertHsnCode>): Promise<HsnCode | undefined>;
+  deleteHsnCode(id: string): Promise<boolean>;
+  seedHsnCodes(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -759,6 +771,50 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return updated;
+  }
+
+  // HSN Codes
+  async getHsnCodes(): Promise<HsnCode[]> {
+    return db.select().from(hsnCodesTable).orderBy(asc(hsnCodesTable.code));
+  }
+
+  async getHsnCode(id: string): Promise<HsnCode | undefined> {
+    const [code] = await db.select().from(hsnCodesTable).where(eq(hsnCodesTable.id, id));
+    return code;
+  }
+
+  async createHsnCode(code: InsertHsnCode): Promise<HsnCode> {
+    const [created] = await db.insert(hsnCodesTable).values(code).returning();
+    return created;
+  }
+
+  async updateHsnCode(id: string, code: Partial<InsertHsnCode>): Promise<HsnCode | undefined> {
+    const [updated] = await db.update(hsnCodesTable).set(code).where(eq(hsnCodesTable.id, id)).returning();
+    return updated;
+  }
+
+  async deleteHsnCode(id: string): Promise<boolean> {
+    const result = await db.delete(hsnCodesTable).where(eq(hsnCodesTable.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async seedHsnCodes(): Promise<void> {
+    const existing = await this.getHsnCodes();
+    if (existing.length === 0) {
+      for (const hsn of defaultHsnCodes) {
+        try {
+          await db.insert(hsnCodesTable).values({
+            code: hsn.code,
+            description: hsn.description,
+            gstRate: hsn.gstRate,
+            isActive: true,
+          });
+        } catch (e) {
+          // Skip duplicates
+        }
+      }
+      console.log("Seeded default HSN codes");
+    }
   }
 }
 
