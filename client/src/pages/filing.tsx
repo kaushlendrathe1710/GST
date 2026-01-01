@@ -47,6 +47,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { BusinessRequired } from "@/components/business-required";
+import { useAuth } from "@/lib/auth";
 
 function ReturnStatusBadge({ status, dueDate }: { status: string; dueDate: string }) {
   const daysLeft = getDaysUntilDue(dueDate);
@@ -168,6 +169,7 @@ function FilingCard({
   filingId,
   onAutoPopulate,
   onFileNil,
+  onCreateReturn,
   isPending
 }: { 
   returnType: string; 
@@ -177,6 +179,7 @@ function FilingCard({
   filingId?: string;
   onAutoPopulate?: () => void;
   onFileNil?: () => void;
+  onCreateReturn?: () => void;
   isPending?: boolean;
 }) {
   return (
@@ -228,6 +231,19 @@ function FilingCard({
                 File Nil Return
               </Button>
             )}
+            {onCreateReturn && (
+              <Button 
+                variant="default" 
+                size="sm" 
+                className="gap-1" 
+                onClick={onCreateReturn}
+                disabled={isPending}
+                data-testid={`button-create-return-${returnType}`}
+              >
+                {isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <ArrowUpRight className="h-3 w-3" />}
+                Start Filing
+              </Button>
+            )}
           </div>
         </div>
       </CardContent>
@@ -238,6 +254,7 @@ function FilingCard({
 export default function Filing() {
   const [yearFilter, setYearFilter] = useState("2024-25");
   const { toast } = useToast();
+  const { currentBusinessId } = useAuth();
   
   const { data: filingReturns, isLoading } = useQuery<FilingReturn[]>({
     queryKey: ["/api/filing-returns"],
@@ -284,6 +301,55 @@ export default function Filing() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to send reminders", variant: "destructive" });
+    }
+  });
+
+  const createReturnMutation = useMutation({
+    mutationFn: async (returnType: string) => {
+      if (!currentBusinessId) {
+        throw new Error("No business selected");
+      }
+      
+      const now = new Date();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const period = `${month}${year}`;
+      
+      let dueDate = new Date();
+      if (returnType === "GSTR-1") {
+        dueDate = new Date(year, now.getMonth() + 1, 11);
+      } else if (returnType === "GSTR-3B") {
+        dueDate = new Date(year, now.getMonth() + 1, 20);
+      } else if (returnType === "GSTR-4") {
+        dueDate = new Date(year + 1, 3, 30);
+      } else if (returnType === "GSTR-9") {
+        dueDate = new Date(year + 1, 11, 31);
+      } else if (returnType === "CMP-08") {
+        const quarterEnd = Math.floor(now.getMonth() / 3) * 3 + 2;
+        dueDate = new Date(year, quarterEnd + 1, 18);
+      }
+
+      const dueDateStr = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
+      
+      const res = await apiRequest("POST", "/api/filing-returns", {
+        businessId: currentBusinessId,
+        returnType,
+        period,
+        dueDate: dueDateStr,
+        status: "pending"
+      });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/filing-returns"] });
+      toast({ 
+        title: "Return Created", 
+        description: `${data.returnType} return created. Use Auto-Populate to fill from invoices.` 
+      });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Failed to create return";
+      toast({ title: "Error", description: message, variant: "destructive" });
     }
   });
 
@@ -467,7 +533,8 @@ export default function Filing() {
                   filingId={filing?.id}
                   onAutoPopulate={filing ? () => autoPopulateMutation.mutate(filing.id) : undefined}
                   onFileNil={filing ? () => fileNilMutation.mutate(filing.id) : undefined}
-                  isPending={autoPopulateMutation.isPending || fileNilMutation.isPending}
+                  onCreateReturn={!filing ? () => createReturnMutation.mutate(rt.type) : undefined}
+                  isPending={autoPopulateMutation.isPending || fileNilMutation.isPending || createReturnMutation.isPending}
                 />
               );
             })}
